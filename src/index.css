@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+/*
+  Thème SoundCheck V2 — direction editorial magazine premium.
+  ---------------------------------------------------------------------------
+  Tailwind v4 utilise @theme pour exposer des tokens custom en classes
+  utilitaires (ex: bg-bg-primary, text-accent-green, font-display, font-serif).
+*/
+@theme {
+  --color-bg-primary: #0A0A0A;
+  --color-bg-card: #181818;
+  --color-bg-elevated: #232323;
+
+  --color-accent-green: #1DB954;
+  --color-accent-green-hover: #1ED760;
+  --color-accent-purple: #A855F7;
+  --color-accent-pink: #EC4899;
+  --color-accent-blue: #3B82F6;
+
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #B3B3B3;
+  --color-text-tertiary: #6B6B6B;
+  --color-text-muted: #6B7280;
+
+  /* Familles typographiques — Instrument Serif est utilisé en italique pour
+     les éléments d'accent style magazine (numéros, citations, labels). */
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Space Grotesk", sans-serif;
+  --font-serif: "Instrument Serif", "Times New Roman", serif;
+}
+
+/* Reset & base ---------------------------------------------------------- */
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden; /* on coupe les débordements horizontaux des marquees */
+}
+
+/* Scrollbar discrète sur fond sombre */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+/* ===================================================================== */
+/* Grain texture overlay — donne le côté "imprimé magazine"                */
+/* Utilisation : <div className="grain-overlay" /> en position absolute    */
+/* ===================================================================== */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  /* Texture noise SVG inline encodée en base64 (très léger, < 1 ko) */
+  background-image: url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ===================================================================== */
+/* Animations utilitaires                                                  */
+/* ===================================================================== */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(29, 185, 84, 0.6); }
+  50% { box-shadow: 0 0 0 18px rgba(29, 185, 84, 0); }
+}
+.animate-pulse-glow { animation: pulseGlow 2s ease-out infinite; }
+
+/* Halo qui dérive lentement — utilisé en background sur Home */
+@keyframes drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(40px, -30px) scale(1.1); }
+  66%  { transform: translate(-30px, 20px) scale(0.95); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+.animate-drift { animation: drift 20s ease-in-out infinite; }
+
+/* Marquee horizontal — défilement style ticker magazine */
+@keyframes marqueeScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.animate-marquee { animation: marqueeScroll 40s linear infinite; }
+
+/* Underline tracé qui apparaît au hover (CTA editorial) */
+.editorial-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.editorial-link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  width: 100%;
+  height: 1.5px;
+  background: currentColor;
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.editorial-link:hover::after,
+.editorial-link:focus-visible::after {
+  transform: scaleX(1);
+}
+.editorial-link .arrow {
+  display: inline-block;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.editorial-link:hover .arrow,
+.editorial-link:focus-visible .arrow {
+  transform: translateX(8px);
+}
+
+/* Helper d'italique serif éditorial */
+.serif-italic {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+}
