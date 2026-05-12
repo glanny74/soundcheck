@@ -24,8 +24,10 @@ function buildUrl(endpoint) {
     // En dev : /deezer/search/artist?q=... -> proxy Vite -> api.deezer.com
     return `/deezer${endpoint}`
   }
-  // En prod : on passe par corsproxy.io
-  return `https://corsproxy.io/?${encodeURIComponent(`https://api.deezer.com${endpoint}`)}`
+  // En prod : on passe par notre serverless function Vercel (api/deezer.js)
+  // qui relaie l'appel côté serveur (où CORS n'existe pas). C'est bien plus
+  // fiable que les proxys publics type corsproxy.io.
+  return `/api/deezer?path=${encodeURIComponent(endpoint)}`
 }
 
 // Fonction utilitaire qui fait l'appel HTTP, parse le JSON et gère les erreurs.
