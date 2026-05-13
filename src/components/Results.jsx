@@ -62,7 +62,7 @@ export default function Results({ players, onReplay, onNewGame }) {
     <motion.main
       key="results"
       {...pageTransition}
-      className="relative min-h-screen w-full overflow-hidden px-6 sm:px-10 py-12"
+      className="relative min-h-screen w-full overflow-hidden px-4 sm:px-10 py-8 sm:py-12"
     >
       {/* Halos colorés (gradient mesh artisanal) */}
       <div
@@ -101,12 +101,12 @@ export default function Results({ players, onReplay, onNewGame }) {
         <motion.h1
           variants={heroTitle}
           className="mt-6 text-center font-display font-extrabold leading-[0.85] tracking-[-0.04em]
-                     text-[64px] sm:text-[120px] lg:text-[180px]"
+                     text-[52px] sm:text-[120px] lg:text-[180px] break-words"
         >
           <span className="block bg-gradient-to-br from-accent-green via-accent-purple to-accent-pink bg-clip-text text-transparent">
             {first ? first.name : '—'}
           </span>
-          <span className="block serif-italic text-text-secondary text-[36px] sm:text-[72px] lg:text-[96px] leading-none mt-1">
+          <span className="block serif-italic text-text-secondary text-[28px] sm:text-[72px] lg:text-[96px] leading-none mt-1">
             l'emporte.
           </span>
         </motion.h1>

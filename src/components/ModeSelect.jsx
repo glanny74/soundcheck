@@ -174,7 +174,7 @@ export default function ModeSelect({ onStart, onBack }) {
     <motion.main
       key="mode_select"
       {...pageTransition}
-      className="relative min-h-screen w-full overflow-hidden px-6 sm:px-10 py-8"
+      className="relative min-h-screen w-full overflow-hidden px-4 sm:px-10 py-6 sm:py-8"
     >
       <div
         className="pointer-events-none absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full bg-accent-pink/15 blur-[120px] animate-drift"
@@ -225,7 +225,7 @@ export default function ModeSelect({ onStart, onBack }) {
         <motion.h1
           variants={fadeUpChild}
           className="font-display font-extrabold leading-[0.85] tracking-[-0.04em]
-                     text-[56px] sm:text-[88px] lg:text-[120px]"
+                     text-[44px] sm:text-[88px] lg:text-[120px]"
         >
           <span className="serif-italic text-accent-pink">Choisissez</span>{' '}
           <br className="sm:hidden" />
@@ -246,8 +246,8 @@ export default function ModeSelect({ onStart, onBack }) {
           mode={MODES[0]}
           selected={mode === 'artist'}
           onClick={() => handleModeChange('artist')}
-          className="col-span-12 sm:col-span-7 row-span-2 min-h-[280px]"
-          numberSize="text-[260px]"
+          className="col-span-12 sm:col-span-7 row-span-2 min-h-[180px] sm:min-h-[280px]"
+          numberSize="text-[140px] sm:text-[260px]"
         />
 
         {/* Multi-artistes : moyenne, haut-droite */}
@@ -256,8 +256,8 @@ export default function ModeSelect({ onStart, onBack }) {
           mode={MODES[1]}
           selected={mode === 'multi'}
           onClick={() => handleModeChange('multi')}
-          className="col-span-12 sm:col-span-5 min-h-[140px]"
-          numberSize="text-[180px]"
+          className="col-span-12 sm:col-span-5 min-h-[130px] sm:min-h-[140px]"
+          numberSize="text-[110px] sm:text-[180px]"
         />
 
         {/* Genre : moyenne, milieu-droite */}
@@ -266,8 +266,8 @@ export default function ModeSelect({ onStart, onBack }) {
           mode={MODES[2]}
           selected={mode === 'genre'}
           onClick={() => handleModeChange('genre')}
-          className="col-span-12 sm:col-span-5 min-h-[140px]"
-          numberSize="text-[180px]"
+          className="col-span-12 sm:col-span-5 min-h-[130px] sm:min-h-[140px]"
+          numberSize="text-[110px] sm:text-[180px]"
         />
 
         {/* Aléatoire : pleine largeur en bas */}
@@ -277,7 +277,7 @@ export default function ModeSelect({ onStart, onBack }) {
           selected={mode === 'random'}
           onClick={() => handleModeChange('random')}
           className="col-span-12 min-h-[110px]"
-          numberSize="text-[160px]"
+          numberSize="text-[100px] sm:text-[160px]"
           horizontal
         />
       </motion.div>

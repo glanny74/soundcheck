@@ -12,30 +12,30 @@ import { playCorrect, playTick, playWrong } from '../utils/sounds'
 import Button from './ui/Button'
 
 /*
-  Écran Game V2 — refonte editorial magazine.
+  Écran Game V3 — flux inversé "réponse d'abord, puis joueur".
   ===========================================================================
-  Ambiance immersive : pochette de l'album en cours, floutée massivement en
-  arrière-plan (blur + scale). Chaque manche a donc sa propre ambiance
-  visuelle, comme une couverture qui change.
+  Changement majeur par rapport à la V2 : on supprime la mécanique de buzz
+  (clavier 1-5 pendant l'audio). Désormais :
 
-  Composants visuels clés :
-   - Header editorial (label MANCHE + signature SoundCheck)
-   - Timer circulaire SVG (stroke-dashoffset animé)
-   - Visualiseur audio en barres (Web Audio API + AnalyserNode — pas du fake)
-   - Layout central qui change selon la phase
-   - 4 cartes QCM avec numéro Instrument Serif en fond
-   - Scoreboard "fiche editorial" avec count-up sur les scores
+    1) phase "playing"     : l'audio joue, les 4 propositions sont
+                             cliquables. N'importe qui peut tap.
+    2) phase "attributing" : on demande "qui a donné cette réponse ?"
+                             en présentant des grosses cartes joueurs
+                             cliquables (tactile-friendly).
+    3) phase "reveal"      : on évalue (bonne/mauvaise), on attribue les
+                             points, on affiche la pochette + titre.
 
-  La logique fonctionnelle (phases, timers, buzz, scores) est strictement
-  identique à la V1 — c'est uniquement le rendu qui change.
+  Pourquoi : c'est naturellement adapté au mobile (pas besoin de clavier
+  physique) et évite la course au buzz qui est parfois injuste. On garde
+  les touches clavier en bonus pour desktop :
+    - phase "playing"     : 1-4 = choisir la proposition correspondante
+    - phase "attributing" : 1-5 = sélectionner le joueur correspondant
 */
 
 const SAMPLE_DURATION_MS = 8000
 const QUESTION_TIME_MS = 15000
 const QUESTION_TIME_S = QUESTION_TIME_MS / 1000
 const POINTS_PER_CORRECT = 10
-
-// 7 barres pour le visualiseur audio
 const BAR_COUNT = 7
 
 export default function Game({ players, config, onFinish }) {
@@ -50,14 +50,14 @@ export default function Game({ players, config, onFinish }) {
   const [question, setQuestion] = useState(null)
 
   const [scoreboard, setScoreboard] = useState(players)
-  const [activePlayerIds, setActivePlayerIds] = useState(
-    players.map((p) => p.id)
-  )
-  const [buzzedPlayer, setBuzzedPlayer] = useState(null)
-  const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_S)
-  const [lastResult, setLastResult] = useState(null)
 
-  // Barres du visualiseur audio — values entre 0 et 1
+  // Nouvelle logique : on stocke la réponse cliquée et le joueur attribué
+  const [selectedAnswer, setSelectedAnswer] = useState(null) // track
+  const [attributedPlayer, setAttributedPlayer] = useState(null) // player
+
+  const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_S)
+  const [lastResult, setLastResult] = useState(null) // 'correct' | 'wrong' | 'timeout'
+
   const [bars, setBars] = useState(() => new Array(BAR_COUNT).fill(0.05))
 
   // ---------------- refs ----------------
@@ -66,7 +66,6 @@ export default function Game({ players, config, onFinish }) {
   const questionTimerRef = useRef(null)
   const tickTimerRef = useRef(null)
 
-  // Visualiseur Web Audio API
   const visualizerRef = useRef({
     ctx: null,
     source: null,
@@ -75,7 +74,7 @@ export default function Game({ players, config, onFinish }) {
   })
 
   // -------------------------------------------------------------------------
-  // 1) Chargement du pool de titres au montage (en fonction du mode choisi)
+  // 1) Chargement du pool de titres au montage
   // -------------------------------------------------------------------------
   useEffect(() => {
     let cancelled = false
@@ -135,40 +134,47 @@ export default function Game({ players, config, onFinish }) {
       return
     }
     setQuestion(q)
-    setActivePlayerIds(players.map((p) => p.id))
-    setBuzzedPlayer(null)
+    setSelectedAnswer(null)
+    setAttributedPlayer(null)
     setTimeLeft(QUESTION_TIME_S)
     setLastResult(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, pool])
 
   // -------------------------------------------------------------------------
-  // 3) Gestion des touches clavier (buzz) pendant la phase "playing"
+  // 3) Gestion clavier — touches 1-4 (réponse) en playing, 1-5 (joueur) en
+  //    attributing. Bonus pour desktop, pas nécessaire en mobile.
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (phase !== 'playing') return
+    if (phase !== 'playing' && phase !== 'attributing') return
 
     function handleKeyDown(e) {
       const num = parseInt(e.key, 10)
-      if (Number.isNaN(num) || num < 1 || num > players.length) return
+      if (Number.isNaN(num)) return
 
-      const player = players[num - 1]
-      if (!player) return
-      if (!activePlayerIds.includes(player.id)) return
-
-      buzzIn(player)
+      if (phase === 'playing') {
+        // 1-4 = choisir la proposition
+        if (num < 1 || num > 4) return
+        const choice = question?.choices?.[num - 1]
+        if (choice) handleAnswerSelect(choice)
+      } else if (phase === 'attributing') {
+        // 1-N = sélectionner le joueur
+        if (num < 1 || num > players.length) return
+        const player = players[num - 1]
+        if (player) handlePlayerAttribute(player)
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, activePlayerIds])
+  }, [phase, question, players])
 
   // -------------------------------------------------------------------------
-  // 4) Tick du timer de question (1 seconde toutes les secondes)
+  // 4) Tick du chrono pendant playing + attributing
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (phase !== 'playing' && phase !== 'answering') return
+    if (phase !== 'playing' && phase !== 'attributing') return
 
     tickTimerRef.current = setInterval(() => {
       setTimeLeft((t) => {
@@ -182,8 +188,7 @@ export default function Game({ players, config, onFinish }) {
   }, [phase])
 
   // -------------------------------------------------------------------------
-  // 5) Boucle d'animation du visualiseur audio (requestAnimationFrame)
-  //    Lit les fréquences en temps réel pendant la phase "playing".
+  // 5) Visualiseur audio (requestAnimationFrame)
   // -------------------------------------------------------------------------
   useEffect(() => {
     if (phase !== 'playing') return
@@ -193,11 +198,9 @@ export default function Game({ players, config, onFinish }) {
       const { analyser, data } = visualizerRef.current
       if (analyser && data) {
         analyser.getByteFrequencyData(data)
-        // On regroupe les données en BAR_COUNT buckets équidistants
         const step = Math.floor(data.length / BAR_COUNT)
         const next = new Array(BAR_COUNT)
         for (let i = 0; i < BAR_COUNT; i++) {
-          // On prend la valeur moyenne du bucket pour lisser
           let sum = 0
           for (let j = 0; j < step; j++) sum += data[i * step + j]
           next[i] = Math.max(0.05, sum / step / 255)
@@ -215,7 +218,7 @@ export default function Game({ players, config, onFinish }) {
   }, [phase])
 
   // -------------------------------------------------------------------------
-  // 6) Cleanup global au démontage : audio + timers + Web Audio API
+  // 6) Cleanup au démontage
   // -------------------------------------------------------------------------
   useEffect(() => {
     return () => {
@@ -232,9 +235,6 @@ export default function Game({ players, config, onFinish }) {
   // ACTIONS
   // =========================================================================
 
-  // Initialise le contexte Web Audio + AnalyserNode au premier play.
-  // On ne peut le faire qu'à ce moment (politique autoplay des navigateurs)
-  // et on doit créer le MediaElementSource UNE seule fois par élément audio.
   function ensureAnalyserSetup() {
     if (visualizerRef.current.source) return
     if (!audioRef.current) return
@@ -284,46 +284,45 @@ export default function Game({ players, config, onFinish }) {
     clearInterval(tickTimerRef.current)
   }
 
-  function buzzIn(player) {
+  // Phase 1 → 2 : on a cliqué sur une proposition. On stoppe l'audio et on
+  // passe à l'attribution. On note la réponse mais on n'évalue pas encore.
+  function handleAnswerSelect(track) {
+    if (phase !== 'playing' || !track) return
     if (audioRef.current) audioRef.current.pause()
-    setBuzzedPlayer(player)
-    setPhase('answering')
+    clearTimeout(sampleTimerRef.current)
+    setSelectedAnswer(track)
+    setPhase('attributing')
   }
 
-  function handleAnswer(track) {
-    if (!buzzedPlayer || !question) return
-    const isCorrect = track.id === question.correct.id
+  // Phase 2 → 3 : on a sélectionné le joueur. On évalue maintenant :
+  //   - si selectedAnswer == bonne réponse, ce joueur gagne +10 pts
+  //   - sinon, lastResult = 'wrong' (0 point)
+  function handlePlayerAttribute(player) {
+    if (phase !== 'attributing' || !selectedAnswer || !question) return
+
+    const isCorrect = selectedAnswer.id === question.correct.id
+    setAttributedPlayer(player)
 
     if (isCorrect) {
       setScoreboard((prev) =>
         prev.map((p) =>
-          p.id === buzzedPlayer.id
+          p.id === player.id
             ? { ...p, score: p.score + POINTS_PER_CORRECT }
             : p
         )
       )
       setLastResult('correct')
       playCorrect()
-      revealQuestion()
     } else {
-      const remaining = activePlayerIds.filter((id) => id !== buzzedPlayer.id)
-      setActivePlayerIds(remaining)
-      setBuzzedPlayer(null)
-
-      if (remaining.length === 0) {
-        setLastResult('wrong')
-        playWrong()
-        revealQuestion()
-      } else {
-        if (audioRef.current) {
-          audioRef.current.play().catch(() => {})
-        }
-        setPhase('playing')
-      }
+      setLastResult('wrong')
+      playWrong()
     }
+
+    revealQuestion()
   }
 
   function handleTimeout() {
+    if (phase === 'reveal') return // déjà passé en reveal
     setLastResult('timeout')
     playWrong()
     revealQuestion()
@@ -381,8 +380,6 @@ export default function Game({ players, config, onFinish }) {
     question.correct.album?.cover_big ||
     question.correct.album?.cover_medium
   const isLastRound = roundIndex + 1 >= config.totalRounds
-
-  // Couleur du timer : passe au rose quand il reste peu de temps
   const timerDanger = timeLeft <= 5
 
   return (
@@ -414,14 +411,14 @@ export default function Game({ players, config, onFinish }) {
       <div className="pointer-events-none absolute inset-0 bg-bg-primary/40" aria-hidden="true" />
 
       {/* === Header editorial === */}
-      <header className="relative z-10 flex items-start justify-between gap-6 px-6 sm:px-10 pt-8">
+      <header className="relative z-10 flex items-start justify-between gap-4 px-4 sm:px-10 pt-6 sm:pt-8">
         <div>
           <p className="text-[10px] uppercase tracking-[0.3em] text-text-tertiary">
             Manche
           </p>
-          <p className="font-display font-bold text-4xl sm:text-5xl leading-none mt-2 tabular-nums">
+          <p className="font-display font-bold text-3xl sm:text-5xl leading-none mt-2 tabular-nums">
             <span className="text-text-primary">{String(roundIndex + 1).padStart(2, '0')}</span>
-            <span className="serif-italic text-text-tertiary text-2xl sm:text-3xl mx-2">/</span>
+            <span className="serif-italic text-text-tertiary text-xl sm:text-3xl mx-2">/</span>
             <span className="text-text-tertiary">{String(config.totalRounds).padStart(2, '0')}</span>
           </p>
         </div>
@@ -436,11 +433,11 @@ export default function Game({ players, config, onFinish }) {
       </header>
 
       {/* === Zone principale : grille 12 cols asymétrique === */}
-      <div className="relative z-10 px-6 sm:px-10 mt-8 grid grid-cols-12 gap-6 pb-12">
-        {/* Colonne centrale (9 cols desktop) */}
-        <section className="col-span-12 lg:col-span-9">
+      <div className="relative z-10 px-4 sm:px-10 mt-6 sm:mt-8 grid grid-cols-12 gap-4 sm:gap-6 pb-12">
+        {/* Colonne centrale (9 cols desktop, 12 mobile) */}
+        <section className="col-span-12 lg:col-span-9 order-2 lg:order-1">
           {/* Timer circulaire SVG centré */}
-          <div className="flex justify-center mb-8">
+          <div className="flex justify-center mb-6 sm:mb-8">
             <CircularTimer
               seconds={timeLeft}
               total={QUESTION_TIME_S}
@@ -451,7 +448,7 @@ export default function Game({ players, config, onFinish }) {
           </div>
 
           {/* Zone centrale variable */}
-          <div className="min-h-[260px] flex items-center justify-center">
+          <div className="min-h-[180px] sm:min-h-[220px] flex items-center justify-center">
             <AnimatePresence mode="wait">
               {phase === 'ready' && (
                 <motion.div
@@ -463,7 +460,7 @@ export default function Game({ players, config, onFinish }) {
                   className="flex flex-col items-center"
                 >
                   <PlayButton onClick={startSample} />
-                  <p className="mt-6 text-sm uppercase tracking-[0.3em] text-text-tertiary">
+                  <p className="mt-6 text-xs uppercase tracking-[0.3em] text-text-tertiary">
                     Tap to play
                   </p>
                 </motion.div>
@@ -481,38 +478,41 @@ export default function Game({ players, config, onFinish }) {
                   <p className="text-[11px] uppercase tracking-[0.3em] text-text-tertiary mb-3">
                     À l'écoute
                   </p>
-                  <p className="font-display font-bold text-3xl sm:text-4xl">
-                    Écoute{' '}
+                  <p className="font-display font-bold text-2xl sm:text-4xl px-2">
+                    Tape la bonne{' '}
                     <span className="serif-italic text-text-secondary">
-                      attentivement
+                      proposition
                     </span>
                     .
-                  </p>
-                  <p className="mt-3 text-sm text-text-secondary">
-                    Appuie sur ta touche dès que tu sais.
                   </p>
                 </motion.div>
               )}
 
-              {phase === 'answering' && buzzedPlayer && (
+              {phase === 'attributing' && selectedAnswer && (
                 <motion.div
-                  key="answering"
-                  initial={{ opacity: 0, scale: 1.3, filter: 'blur(20px)' }}
-                  animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.5, ease: EASE_OUT }}
+                  key="attributing"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.4, ease: EASE_OUT }}
                   className="text-center"
                 >
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-text-tertiary mb-3">
-                    À toi de jouer
+                  <p className="text-[11px] uppercase tracking-[0.3em] text-accent-purple mb-3">
+                    Réponse choisie
                   </p>
-                  <p className="font-display font-extrabold leading-none tracking-[-0.04em] text-[72px] sm:text-[120px] lg:text-[160px]">
-                    <span className="bg-gradient-to-r from-accent-green via-accent-blue to-accent-purple bg-clip-text text-transparent">
-                      {buzzedPlayer.name}
+                  <p className="font-display font-bold text-xl sm:text-2xl px-2">
+                    {selectedAnswer.title}
+                    <span className="serif-italic text-text-tertiary">
+                      {' '}
+                      — {selectedAnswer.artist.name}
                     </span>
                   </p>
-                  <p className="mt-4 text-sm text-text-secondary">
-                    Clique sur la bonne proposition ci-dessous.
+                  <p className="mt-4 text-sm sm:text-base text-text-secondary">
+                    Qui a{' '}
+                    <span className="serif-italic text-text-primary">
+                      donné
+                    </span>{' '}
+                    cette réponse ?
                   </p>
                 </motion.div>
               )}
@@ -526,29 +526,67 @@ export default function Game({ players, config, onFinish }) {
                   transition={{ duration: 0.6, ease: EASE_OUT }}
                   className="w-full"
                 >
-                  <RevealLayout track={question.correct} result={lastResult} />
+                  <RevealLayout
+                    track={question.correct}
+                    result={lastResult}
+                    attributedPlayer={attributedPlayer}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
 
-          {/* === Boutons QCM === */}
-          {(phase === 'playing' || phase === 'answering') && (
+          {/* === Boutons QCM === (phase playing uniquement) */}
+          {phase === 'playing' && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2, ease: EASE_OUT }}
-              className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-10"
+              className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-8 sm:mt-10"
             >
               {question.choices.map((track, i) => (
                 <ChoiceCard
                   key={track.id + '-' + i}
                   index={i + 1}
                   track={track}
-                  canClick={phase === 'answering'}
-                  onClick={() => phase === 'answering' && handleAnswer(track)}
+                  onClick={() => handleAnswerSelect(track)}
                 />
               ))}
+            </motion.div>
+          )}
+
+          {/* === Cartes joueurs === (phase attributing uniquement) */}
+          {phase === 'attributing' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: EASE_OUT }}
+              className="mt-8 sm:mt-10"
+            >
+              <p className="text-[10px] uppercase tracking-[0.3em] text-text-tertiary mb-4 text-center">
+                Tape sur le{' '}
+                <span className="serif-italic normal-case tracking-normal text-text-secondary">
+                  joueur
+                </span>
+              </p>
+              <div
+                className={`
+                  grid gap-3
+                  ${players.length <= 2 ? 'grid-cols-2' : ''}
+                  ${players.length === 3 ? 'grid-cols-3' : ''}
+                  ${players.length === 4 ? 'grid-cols-2 sm:grid-cols-4' : ''}
+                  ${players.length === 5 ? 'grid-cols-2 sm:grid-cols-5' : ''}
+                `}
+              >
+                {players.map((p, i) => (
+                  <PlayerAttributeCard
+                    key={p.id}
+                    index={i + 1}
+                    player={p}
+                    onClick={() => handlePlayerAttribute(p)}
+                  />
+                ))}
+              </div>
             </motion.div>
           )}
 
@@ -558,26 +596,22 @@ export default function Game({ players, config, onFinish }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4, duration: 0.4 }}
-              className="mt-10 flex justify-end"
+              className="mt-10 flex justify-center sm:justify-end"
             >
               <button
                 onClick={advanceToNext}
-                className="editorial-link group cursor-pointer font-display font-medium text-2xl text-text-primary"
+                className="editorial-link group cursor-pointer font-display font-medium text-xl sm:text-2xl text-text-primary"
               >
                 <span>{isLastRound ? 'Voir les résultats' : 'Manche suivante'}</span>
-                <span className="arrow text-accent-green text-3xl leading-none">→</span>
+                <span className="arrow text-accent-green text-2xl sm:text-3xl leading-none">→</span>
               </button>
             </motion.div>
           )}
         </section>
 
-        {/* Colonne droite : scoreboard */}
-        <aside className="col-span-12 lg:col-span-3 order-first lg:order-last">
-          <Scoreboard
-            players={scoreboard}
-            activeIds={activePlayerIds}
-            buzzedId={buzzedPlayer?.id}
-          />
+        {/* Colonne droite : scoreboard (en haut sur mobile, à droite desktop) */}
+        <aside className="col-span-12 lg:col-span-3 order-1 lg:order-2">
+          <Scoreboard players={scoreboard} attributedId={attributedPlayer?.id} />
         </aside>
       </div>
     </motion.main>
@@ -585,7 +619,7 @@ export default function Game({ players, config, onFinish }) {
 }
 
 /* ============================================================ */
-/* ----- SOUS-COMPOSANTS ----- */
+/* SOUS-COMPOSANTS                                               */
 /* ============================================================ */
 
 function CenteredMessage({ title, subtitle, action }) {
@@ -616,9 +650,8 @@ function CircularTimer({ seconds, total, danger, showVisualizer, bars }) {
   const color = danger ? 'var(--color-accent-pink)' : 'var(--color-accent-green)'
 
   return (
-    <div className="relative w-[200px] h-[200px]">
+    <div className="relative w-[160px] h-[160px] sm:w-[200px] sm:h-[200px]">
       <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90">
-        {/* Cercle de fond */}
         <circle
           cx="100"
           cy="100"
@@ -627,7 +660,6 @@ function CircularTimer({ seconds, total, danger, showVisualizer, bars }) {
           strokeWidth="3"
           fill="none"
         />
-        {/* Cercle progressif animé via stroke-dashoffset */}
         <circle
           cx="100"
           cy="100"
@@ -642,27 +674,27 @@ function CircularTimer({ seconds, total, danger, showVisualizer, bars }) {
         />
       </svg>
 
-      {/* Contenu central : visualiseur ou chiffre */}
       <div className="absolute inset-0 flex items-center justify-center">
         {showVisualizer ? (
-          <div className="flex items-end gap-1.5 h-16">
+          <div className="flex items-end gap-1 sm:gap-1.5 h-14 sm:h-16">
             {bars.map((v, i) => (
               <span
                 key={i}
                 style={{
                   height: `${10 + v * 90}%`,
                   background: 'var(--color-accent-green)',
-                  width: '5px',
+                  width: '4px',
                   borderRadius: '2px',
                   transition: 'height 80ms ease-out',
                 }}
+                className="sm:w-[5px]"
               />
             ))}
           </div>
         ) : (
           <span
             className={`
-              font-display font-bold text-6xl tabular-nums leading-none
+              font-display font-bold text-5xl sm:text-6xl tabular-nums leading-none
               ${danger ? 'text-accent-pink' : 'text-text-primary'}
             `}
           >
@@ -679,7 +711,7 @@ function PlayButton({ onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-44 h-44 rounded-full bg-accent-green text-black
+      className="w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-accent-green text-black
                  flex items-center justify-center cursor-pointer
                  hover:scale-105 hover:bg-accent-green-hover transition-all duration-300
                  shadow-2xl shadow-accent-green/40
@@ -687,17 +719,17 @@ function PlayButton({ onClick }) {
       aria-label="Lancer l'extrait"
     >
       <span
-        className="ml-3 block w-0 h-0
-                   border-t-[26px] border-t-transparent
-                   border-b-[26px] border-b-transparent
-                   border-l-[40px] border-l-black"
+        className="ml-2 sm:ml-3 block w-0 h-0
+                   border-t-[22px] sm:border-t-[26px] border-t-transparent
+                   border-b-[22px] sm:border-b-[26px] border-b-transparent
+                   border-l-[34px] sm:border-l-[40px] border-l-black"
       />
     </button>
   )
 }
 
-/* ----- Layout de révélation : split pochette + titre ----- */
-function RevealLayout({ track, result }) {
+/* ----- Layout de révélation : split pochette + titre + joueur ----- */
+function RevealLayout({ track, result, attributedPlayer }) {
   const headlines = {
     correct: {
       label: 'Bonne réponse',
@@ -705,64 +737,73 @@ function RevealLayout({ track, result }) {
       italicEnding: 'bravo.',
     },
     wrong: {
-      label: 'Personne',
+      label: 'Mauvaise réponse',
       color: 'text-accent-pink',
-      italicEnding: "n'a trouvé.",
+      italicEnding: 'dommage.',
     },
     timeout: {
       label: 'Temps écoulé',
       color: 'text-accent-pink',
-      italicEnding: 'dommage.',
+      italicEnding: 'trop tard.',
     },
   }
   const h = headlines[result] || headlines.timeout
   const cover = track.album?.cover_big || track.album?.cover_medium
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 items-center">
+    <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 sm:gap-6 items-center">
       <motion.img
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.7, ease: EASE_OUT }}
         src={cover}
         alt=""
-        className="col-span-1 sm:col-span-5 w-48 sm:w-full max-w-[220px] aspect-square rounded-xl object-cover shadow-2xl mx-auto sm:mx-0"
+        className="col-span-1 sm:col-span-5 w-40 sm:w-full max-w-[220px] aspect-square rounded-xl object-cover shadow-2xl mx-auto sm:mx-0"
       />
-      <div className="col-span-1 sm:col-span-7">
+      <div className="col-span-1 sm:col-span-7 text-center sm:text-left">
         <p className={`text-[11px] uppercase tracking-[0.3em] mb-3 ${h.color}`}>
           {h.label}{' '}
           <span className="serif-italic normal-case tracking-normal">
             {h.italicEnding}
           </span>
         </p>
-        <p className="font-display font-bold text-4xl sm:text-5xl leading-[0.95] tracking-tight">
+        <p className="font-display font-bold text-3xl sm:text-5xl leading-[0.95] tracking-tight break-words">
           {track.title}
         </p>
-        <p className="mt-3 text-lg text-text-secondary">
+        <p className="mt-2 sm:mt-3 text-base sm:text-lg text-text-secondary">
           <span className="serif-italic">par</span> {track.artist.name}
         </p>
+        {attributedPlayer && result !== 'timeout' && (
+          <p className="mt-4 text-sm text-text-tertiary">
+            <span className="serif-italic">attribuée à</span>{' '}
+            <span className="font-medium text-text-primary">
+              {attributedPlayer.name}
+            </span>
+            {result === 'correct' && (
+              <span className="ml-2 text-accent-green font-semibold">
+                +10
+              </span>
+            )}
+          </p>
+        )}
       </div>
     </div>
   )
 }
 
 /* ----- Carte QCM editorial : numéro Instrument Serif en fond + titre + artiste ----- */
-function ChoiceCard({ index, track, canClick, onClick }) {
+function ChoiceCard({ index, track, onClick }) {
   return (
     <button
       onClick={onClick}
-      disabled={!canClick}
-      className={`
+      className="
         group relative overflow-hidden text-left
-        p-6 rounded-2xl border transition-all duration-300
-        ${
-          canClick
-            ? 'bg-bg-card border-white/10 hover:border-accent-green hover:bg-bg-card/80 cursor-pointer hover:scale-[1.02]'
-            : 'bg-bg-card/40 border-white/5 opacity-60 cursor-not-allowed'
-        }
-      `}
+        p-5 sm:p-6 rounded-2xl border transition-all duration-300
+        bg-bg-card border-white/10 hover:border-accent-green hover:bg-bg-card/80
+        cursor-pointer hover:scale-[1.02] active:scale-[0.98]
+        min-h-[88px]
+      "
     >
-      {/* Numéro en italique serif en fond, gros, transparent */}
       <span
         className="absolute -right-4 -bottom-12 serif-italic text-[140px] leading-none text-white/[0.04] group-hover:text-accent-green/10 transition-colors pointer-events-none"
         aria-hidden="true"
@@ -776,21 +817,64 @@ function ChoiceCard({ index, track, canClick, onClick }) {
           n°{index}
         </span>
       </p>
-      <p className="relative font-display font-semibold text-lg text-text-primary leading-tight">
+      <p className="relative font-display font-semibold text-base sm:text-lg text-text-primary leading-tight break-words">
         {track.title}
       </p>
-      <p className="relative text-sm text-text-secondary mt-1">
+      <p className="relative text-sm text-text-secondary mt-1 truncate">
         {track.artist.name}
       </p>
     </button>
   )
 }
 
-/* ----- Scoreboard editorial : style fiche magazine ----- */
-function Scoreboard({ players, activeIds, buzzedId }) {
+/* ----- Carte joueur (phase attribution) — grande, tactile-friendly ----- */
+function PlayerAttributeCard({ index, player, onClick }) {
+  // Couleur d'accent assignée selon l'index pour différencier visuellement les joueurs
+  const accents = [
+    'text-accent-green',
+    'text-accent-purple',
+    'text-accent-pink',
+    'text-accent-blue',
+    'text-accent-green',
+  ]
+  const accent = accents[index - 1]
+
+  return (
+    <motion.button
+      whileHover={{ scale: 1.04 }}
+      whileTap={{ scale: 0.96 }}
+      onClick={onClick}
+      className="
+        group relative overflow-hidden text-center
+        p-4 sm:p-6 rounded-2xl border border-white/10
+        bg-bg-card hover:bg-bg-elevated
+        transition-colors duration-200 cursor-pointer
+        min-h-[100px] sm:min-h-[140px]
+        flex flex-col items-center justify-center gap-2
+      "
+    >
+      <span
+        className={`absolute -bottom-6 -right-4 serif-italic ${accent} opacity-20 text-[90px] sm:text-[120px] leading-none pointer-events-none`}
+        aria-hidden="true"
+      >
+        {String(index).padStart(2, '0')}
+      </span>
+
+      <span className={`serif-italic ${accent} text-sm`}>
+        P.{String(index).padStart(2, '0')}
+      </span>
+      <span className="relative font-display font-bold text-lg sm:text-2xl text-text-primary leading-tight break-words px-1">
+        {player.name}
+      </span>
+    </motion.button>
+  )
+}
+
+/* ----- Scoreboard editorial (lecture seule maintenant — plus de buzz) ----- */
+function Scoreboard({ players, attributedId }) {
   return (
     <div className="lg:sticky lg:top-8">
-      <p className="text-[10px] uppercase tracking-[0.3em] text-text-tertiary mb-4 border-b border-white/10 pb-3">
+      <p className="text-[10px] uppercase tracking-[0.3em] text-text-tertiary mb-3 sm:mb-4 border-b border-white/10 pb-3">
         Tableau{' '}
         <span className="serif-italic normal-case tracking-normal text-text-secondary">
           des scores
@@ -799,19 +883,16 @@ function Scoreboard({ players, activeIds, buzzedId }) {
 
       <ul className="space-y-1">
         {players.map((p, i) => {
-          const isOut = !activeIds.includes(p.id)
-          const isBuzzed = p.id === buzzedId
+          const highlighted = p.id === attributedId
           return (
             <li
               key={p.id}
               className={`
-                grid grid-cols-[auto_1fr_auto] items-baseline gap-3 px-3 py-3 rounded-lg
+                grid grid-cols-[auto_1fr_auto] items-baseline gap-3 px-3 py-2.5 rounded-lg
                 transition-all duration-300
                 ${
-                  isBuzzed
+                  highlighted
                     ? 'bg-accent-green/15 border border-accent-green/50'
-                    : isOut
-                    ? 'opacity-40 line-through'
                     : 'hover:bg-white/[0.03]'
                 }
               `}
@@ -820,26 +901,18 @@ function Scoreboard({ players, activeIds, buzzedId }) {
                 P.{String(i + 1).padStart(2, '0')}
               </span>
               <span className="font-medium truncate">{p.name}</span>
-              <span className="font-display font-bold text-xl tabular-nums">
+              <span className="font-display font-bold text-lg sm:text-xl tabular-nums">
                 <AnimatedNumber value={p.score} />
               </span>
             </li>
           )
         })}
       </ul>
-
-      <p className="mt-5 text-[10px] uppercase tracking-[0.25em] text-text-tertiary leading-relaxed border-t border-white/10 pt-4">
-        Tape ton numéro
-        <br />
-        <span className="serif-italic normal-case tracking-normal text-text-secondary">
-          pour buzzer.
-        </span>
-      </p>
     </div>
   )
 }
 
-/* ----- Petit hook visuel : nombre qui s'anime en count-up ----- */
+/* ----- Nombre qui s'anime en count-up ----- */
 function AnimatedNumber({ value }) {
   const [display, setDisplay] = useState(value)
 
@@ -854,7 +927,6 @@ function AnimatedNumber({ value }) {
     function frame(now) {
       const elapsed = now - t0
       const t = Math.min(1, elapsed / duration)
-      // easeOutCubic
       const eased = 1 - Math.pow(1 - t, 3)
       setDisplay(Math.round(start + diff * eased))
       if (t < 1) rafId = requestAnimationFrame(frame)

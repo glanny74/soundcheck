@@ -57,7 +57,7 @@ export default function PlayerSetup({ onValidate, onBack }) {
     <motion.main
       key="player_setup"
       {...pageTransition}
-      className="relative min-h-screen w-full overflow-hidden px-6 sm:px-10 py-8"
+      className="relative min-h-screen w-full overflow-hidden px-4 sm:px-10 py-6 sm:py-8"
     >
       {/* Halos */}
       <div
@@ -103,10 +103,10 @@ export default function PlayerSetup({ onValidate, onBack }) {
           <motion.h1
             variants={fadeUpChild}
             className="font-display font-extrabold leading-[0.85] tracking-[-0.04em]
-                       text-[64px] sm:text-[96px] lg:text-[140px]"
+                       text-[56px] sm:text-[96px] lg:text-[140px]"
           >
             <span className="block text-text-primary">Les</span>
-            <span className="block serif-italic text-accent-purple ml-[10%]">
+            <span className="block serif-italic text-accent-purple ml-[8%] sm:ml-[10%]">
               joueurs.
             </span>
           </motion.h1>
