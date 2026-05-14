@@ -1,0 +1,115 @@
+import { useState } from 'react'
+import { resetPassword } from '../../firebase/auth'
+import AuthLayout from './AuthLayout'
+
+/*
+  Écran "mot de passe oublié" — envoi d'un email de réinitialisation.
+  ---------------------------------------------------------------------------
+  Flow simple : l'utilisateur entre son email, Firebase lui envoie un lien.
+  Pour éviter de divulguer si un email existe ou non en BDD, on affiche
+  toujours un message générique de succès après l'envoi.
+*/
+
+export default function ForgotPassword({ onBack }) {
+  const [email, setEmail] = useState('')
+  const [error, setError] = useState('')
+  const [sent, setSent] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setError('')
+    if (!email.trim() || !email.includes('@')) {
+      setError('Email invalide.')
+      return
+    }
+    setLoading(true)
+    try {
+      await resetPassword(email.trim())
+      setSent(true)
+    } catch (err) {
+      // Note : on affiche quand même un succès générique pour éviter
+      // de révéler si un email existe ou non
+      if (err?.code === 'auth/invalid-email') {
+        setError('Email invalide.')
+      } else {
+        setSent(true)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <AuthLayout
+      step="récupération"
+      title="Mot de passe"
+      italicWord="oublié ?"
+      accent="pink"
+      description="Renseigne ton email et nous t'enverrons un lien pour le réinitialiser."
+    >
+      <button
+        onClick={onBack}
+        className="editorial-link group cursor-pointer text-text-secondary hover:text-text-primary text-sm mb-6"
+      >
+        <span className="arrow text-accent-pink text-xl leading-none rotate-180 inline-block">
+          →
+        </span>
+        <span>Retour</span>
+      </button>
+
+      {sent ? (
+        <div className="space-y-4">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-accent-pink">
+            Email envoyé{' '}
+            <span className="serif-italic normal-case tracking-normal">
+              c'est parti.
+            </span>
+          </p>
+          <p className="font-display font-bold text-2xl text-text-primary">
+            Vérifie ta boîte mail.
+          </p>
+          <p className="text-text-secondary text-sm leading-relaxed">
+            Si un compte existe pour <strong>{email}</strong>, tu vas recevoir
+            un email avec un lien pour réinitialiser ton mot de passe.
+            Pense à vérifier ton dossier spam.
+          </p>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="border-b border-white/10 pb-2 focus-within:border-accent-pink transition-colors">
+            <label className="block text-[10px] uppercase tracking-[0.3em] text-text-tertiary mb-1">
+              Email
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="toi@exemple.com"
+              autoComplete="email"
+              className="w-full bg-transparent text-text-primary placeholder:text-text-tertiary
+                         text-lg py-2 focus:outline-none font-medium"
+            />
+          </div>
+
+          {error && (
+            <p className="text-accent-pink text-sm">
+              <span className="serif-italic">erreur —</span> {error}
+            </p>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="editorial-link group cursor-pointer font-display font-medium text-xl text-text-primary disabled:opacity-40"
+            >
+              <span>{loading ? 'Envoi…' : 'Envoyer le lien'}</span>
+              <span className="arrow text-accent-pink text-2xl leading-none">→</span>
+            </button>
+          </div>
+        </form>
+      )}
+    </AuthLayout>
+  )
+}

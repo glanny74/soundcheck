@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# Variables d'environnement (clés Firebase, etc.)
+# .env contient des secrets et NE doit JAMAIS être commit
+.env
+.env.local
+.env.*.local
+
+# Service account Firebase Admin — fichier ultra sensible (accès full admin)
+# Si tu télécharges le JSON, garde-le hors du projet (ex: Downloads).
+*firebase-adminsdk*.json
+serviceAccount*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

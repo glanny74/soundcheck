@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
+import { saveGame } from '../firebase/firestore'
+import { useAuth } from '../hooks/useAuth'
 import {
   getArtistTopTracks,
   getMultiArtistsTracks,
@@ -39,6 +41,10 @@ const POINTS_PER_CORRECT = 10
 const BAR_COUNT = 7
 
 export default function Game({ players, config, onFinish }) {
+  // user/profile : utilisé en fin de partie pour sauvegarder en Firestore.
+  // Si non connecté (invité) → on bypass simplement la sauvegarde.
+  const { user, profile } = useAuth()
+
   // ---------------- état principal ----------------
   const [phase, setPhase] = useState('loading')
   const [errorMsg, setErrorMsg] = useState('')
@@ -58,20 +64,15 @@ export default function Game({ players, config, onFinish }) {
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_S)
   const [lastResult, setLastResult] = useState(null) // 'correct' | 'wrong' | 'timeout'
 
-  const [bars, setBars] = useState(() => new Array(BAR_COUNT).fill(0.05))
-
   // ---------------- refs ----------------
   const audioRef = useRef(null)
   const sampleTimerRef = useRef(null)
   const questionTimerRef = useRef(null)
   const tickTimerRef = useRef(null)
 
-  const visualizerRef = useRef({
-    ctx: null,
-    source: null,
-    analyser: null,
-    data: null,
-  })
+  // Timestamp de démarrage de la partie — utilisé pour calculer la durée
+  // en fin de partie (pour les stats Firestore).
+  const startTimeRef = useRef(Date.now())
 
   // -------------------------------------------------------------------------
   // 1) Chargement du pool de titres au montage
@@ -171,10 +172,12 @@ export default function Game({ players, config, onFinish }) {
   }, [phase, question, players])
 
   // -------------------------------------------------------------------------
-  // 4) Tick du chrono pendant playing + attributing
+  // 4) Tick du chrono UNIQUEMENT pendant la phase playing.
+  //    Dès qu'on tap une réponse (passage en "attributing"), le tick s'arrête
+  //    et l'utilisateur peut sélectionner le joueur tranquillement, sans pression.
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (phase !== 'playing' && phase !== 'attributing') return
+    if (phase !== 'playing') return
 
     tickTimerRef.current = setInterval(() => {
       setTimeLeft((t) => {
@@ -188,37 +191,7 @@ export default function Game({ players, config, onFinish }) {
   }, [phase])
 
   // -------------------------------------------------------------------------
-  // 5) Visualiseur audio (requestAnimationFrame)
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    if (phase !== 'playing') return
-    let rafId
-
-    function frame() {
-      const { analyser, data } = visualizerRef.current
-      if (analyser && data) {
-        analyser.getByteFrequencyData(data)
-        const step = Math.floor(data.length / BAR_COUNT)
-        const next = new Array(BAR_COUNT)
-        for (let i = 0; i < BAR_COUNT; i++) {
-          let sum = 0
-          for (let j = 0; j < step; j++) sum += data[i * step + j]
-          next[i] = Math.max(0.05, sum / step / 255)
-        }
-        setBars(next)
-      }
-      rafId = requestAnimationFrame(frame)
-    }
-    frame()
-
-    return () => {
-      cancelAnimationFrame(rafId)
-      setBars(new Array(BAR_COUNT).fill(0.05))
-    }
-  }, [phase])
-
-  // -------------------------------------------------------------------------
-  // 6) Cleanup au démontage
+  // 5) Cleanup au démontage
   // -------------------------------------------------------------------------
   useEffect(() => {
     return () => {
@@ -226,8 +199,6 @@ export default function Game({ players, config, onFinish }) {
       clearTimeout(questionTimerRef.current)
       clearInterval(tickTimerRef.current)
       if (audioRef.current) audioRef.current.pause()
-      const { ctx } = visualizerRef.current
-      if (ctx && ctx.state !== 'closed') ctx.close().catch(() => {})
     }
   }, [])
 
@@ -235,33 +206,7 @@ export default function Game({ players, config, onFinish }) {
   // ACTIONS
   // =========================================================================
 
-  function ensureAnalyserSetup() {
-    if (visualizerRef.current.source) return
-    if (!audioRef.current) return
-
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext
-      const ctx = new AC()
-      const source = ctx.createMediaElementSource(audioRef.current)
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 64
-      analyser.smoothingTimeConstant = 0.8
-      source.connect(analyser)
-      analyser.connect(ctx.destination)
-
-      visualizerRef.current = {
-        ctx,
-        source,
-        analyser,
-        data: new Uint8Array(analyser.frequencyBinCount),
-      }
-    } catch (err) {
-      console.warn('Visualiseur audio indisponible :', err)
-    }
-  }
-
   function startSample() {
-    ensureAnalyserSetup()
     const audio = audioRef.current
     if (!audio) return
     audio.currentTime = 0
@@ -284,12 +229,15 @@ export default function Game({ players, config, onFinish }) {
     clearInterval(tickTimerRef.current)
   }
 
-  // Phase 1 → 2 : on a cliqué sur une proposition. On stoppe l'audio et on
-  // passe à l'attribution. On note la réponse mais on n'évalue pas encore.
+  // Phase 1 → 2 : on a cliqué sur une proposition. On stoppe l'audio,
+  // on stoppe AUSSI le compte à rebours global (15s) pour ne plus mettre
+  // de pression pendant la sélection du joueur.
   function handleAnswerSelect(track) {
     if (phase !== 'playing' || !track) return
     if (audioRef.current) audioRef.current.pause()
     clearTimeout(sampleTimerRef.current)
+    clearTimeout(questionTimerRef.current)
+    clearInterval(tickTimerRef.current)
     setSelectedAnswer(track)
     setPhase('attributing')
   }
@@ -347,9 +295,52 @@ export default function Game({ players, config, onFinish }) {
     }
   }
 
-  function finishGame(maybeBoard) {
+  // Fin de partie : on calcule la durée, on détermine le gagnant, et si
+  // l'utilisateur est connecté, on sauvegarde la partie en Firestore avant
+  // de remonter à App pour aller à Results. La sauvegarde est non-bloquante :
+  // si elle échoue (réseau, règles Firestore...), on continue quand même.
+  async function finishGame(maybeBoard) {
     setPhase('finished')
-    setTimeout(() => onFinish(maybeBoard ?? scoreboard), 50)
+
+    const finalPlayers = maybeBoard ?? scoreboard
+    const ranked = [...finalPlayers].sort((a, b) => b.score - a.score)
+    const winner = ranked[0]?.name || ''
+    const duration = Math.round((Date.now() - startTimeRef.current) / 1000)
+
+    // Sauvegarde Firestore — uniquement si l'utilisateur est connecté
+    // (les invités ne sauvegardent rien, conformément au brief)
+    if (user && profile) {
+      try {
+        await saveGame({
+          userId: user.uid,
+          username: profile.username,
+          photoURL: profile.photoURL,
+          mode: config.mode,
+          modeParams: {
+            // On stocke uniquement les noms (pas les objets complets)
+            // pour rester léger et indépendant du format Deezer
+            artists: config.artists?.map((a) => a.name) || null,
+            genre: config.genre || null,
+            language: config.language || null,
+          },
+          rounds: config.totalRounds,
+          players: finalPlayers.map((p, i) => ({
+            name: p.name,
+            score: p.score,
+            // Convention : le premier joueur saisi est considéré comme
+            // l'hôte (= le user connecté). Ses stats grimpent dans son profil.
+            isHost: i === 0,
+          })),
+          winner,
+          duration,
+        })
+      } catch (err) {
+        // On loggue mais on ne bloque pas le flow — le joueur va voir Results
+        console.warn('Échec de la sauvegarde de la partie :', err)
+      }
+    }
+
+    setTimeout(() => onFinish(finalPlayers), 50)
   }
 
   // =========================================================================
@@ -388,7 +379,11 @@ export default function Game({ players, config, onFinish }) {
       {...pageTransition}
       className="relative min-h-screen w-full overflow-hidden"
     >
-      <audio ref={audioRef} src={question.correct.preview} preload="auto" crossOrigin="anonymous" />
+      {/* IMPORTANT : pas de crossOrigin sur l'audio Deezer — leurs MP3 preview
+          ne renvoient pas les bons en-têtes CORS et l'audio se bloque sinon.
+          Conséquence : le vrai visualiseur AnalyserNode ne marche pas, on
+          a remplacé par des barres animées CSS purement décoratives. */}
+      <audio ref={audioRef} src={question.correct.preview} preload="auto" />
 
       {/* === Backdrop pochette floutée === */}
       <AnimatePresence mode="wait">
@@ -443,7 +438,6 @@ export default function Game({ players, config, onFinish }) {
               total={QUESTION_TIME_S}
               danger={timerDanger}
               showVisualizer={phase === 'playing'}
-              bars={bars}
             />
           </div>
 
@@ -642,8 +636,11 @@ function CenteredMessage({ title, subtitle, action }) {
   )
 }
 
-/* ----- Timer circulaire SVG + visualiseur centré ----- */
-function CircularTimer({ seconds, total, danger, showVisualizer, bars }) {
+/* ----- Timer circulaire SVG + visualiseur décoratif centré -----
+    Note : le visualiseur n'est plus "réactif" au son (Deezer ne sert pas
+    les bons headers CORS sur les MP3 preview, ce qui empêche createMediaElementSource).
+    On utilise une animation CSS qui simule un visualizer. C'est purement décoratif. */
+function CircularTimer({ seconds, total, danger, showVisualizer }) {
   const R = 84
   const C = 2 * Math.PI * R
   const offset = C * (1 - seconds / total)
@@ -677,17 +674,11 @@ function CircularTimer({ seconds, total, danger, showVisualizer, bars }) {
       <div className="absolute inset-0 flex items-center justify-center">
         {showVisualizer ? (
           <div className="flex items-end gap-1 sm:gap-1.5 h-14 sm:h-16">
-            {bars.map((v, i) => (
+            {Array.from({ length: BAR_COUNT }).map((_, i) => (
               <span
                 key={i}
-                style={{
-                  height: `${10 + v * 90}%`,
-                  background: 'var(--color-accent-green)',
-                  width: '4px',
-                  borderRadius: '2px',
-                  transition: 'height 80ms ease-out',
-                }}
-                className="sm:w-[5px]"
+                className="bar-visualizer w-1 sm:w-[5px] bg-accent-green rounded-sm"
+                style={{ animationDelay: `${i * 0.12}s` }}
               />
             ))}
           </div>
