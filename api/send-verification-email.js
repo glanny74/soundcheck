@@ -1,23 +1,33 @@
 /*
   Serverless function Vercel — envoi du mail de vérification d'adresse mail
-  brandé SoundCheck (HTML custom) via Resend.
+  brandé SoundCheck via EmailJS.
   ---------------------------------------------------------------------------
   Pourquoi cette fonction existe :
    Firebase Auth en plan Spark verrouille les templates d'email (impossible
-   de mettre du HTML perso). On bypasse donc l'envoi côté Firebase :
+   d'y mettre du HTML perso). On bypasse donc l'envoi côté Firebase :
    - On utilise l'Admin SDK pour GÉNÉRER le lien de vérif officiel (oobCode
      signé, expiration, usage-unique), mais sans envoyer le mail.
-   - On envoie ensuite NOTRE propre mail HTML via Resend.
+   - On envoie ensuite NOTRE propre mail HTML via EmailJS.
 
   Le front (src/firebase/auth.js) appelle cette route après
   createUserWithEmailAndPassword(). En dev local (Vite), la route /api/ n'est
   pas servie → le front fait un fallback sur sendEmailVerification() de
   Firebase pour ne pas bloquer le développement.
 
+  Pourquoi EmailJS (vs Resend) :
+   Resend en plan gratuit exige un domaine vérifié pour envoyer à n'importe
+   qui (en test mode, il ne sert que l'email du compte). EmailJS utilise le
+   compte Gmail connecté pour envoyer, donc pas de restriction de destinataire.
+   Plan gratuit : 200 mails/mois — largement suffisant pour un projet école.
+
+  Le template HTML lui-même est défini dans le dashboard EmailJS, pas dans
+  le code (contrainte EmailJS). On lui passe juste les variables.
+
   Variables d'env requises (Vercel) :
-   - RESEND_API_KEY        : clé API du compte Resend
-   - RESEND_FROM_EMAIL     : "Nom <email@domaine>" (test mode possible :
-                             "SoundCheck <onboarding@resend.dev>")
+   - EMAILJS_SERVICE_ID    : ID du service email (Gmail) configuré sur EmailJS
+   - EMAILJS_TEMPLATE_ID   : ID du template "SoundCheck Verification"
+   - EMAILJS_PUBLIC_KEY    : clé publique du compte EmailJS
+   - EMAILJS_PRIVATE_KEY   : clé privée (recommandée pour usage server-side)
    - FIREBASE_PROJECT_ID
    - FIREBASE_CLIENT_EMAIL
    - FIREBASE_PRIVATE_KEY
@@ -28,9 +38,8 @@
   pas de compte tant que l'utilisateur ne s'inscrit pas côté client.
 */
 
-import { Resend } from 'resend'
+import emailjs from '@emailjs/nodejs'
 import { getAdminAuth } from './_lib/firebase-admin.js'
-import { buildVerificationEmail } from './_lib/verification-email.js'
 
 export default async function handler(req, res) {
   // CORS basique — même domaine en prod, mais utile pour les preview deploys
@@ -54,44 +63,48 @@ export default async function handler(req, res) {
     // 1) Génération du lien officiel via l'Admin SDK.
     // Le lien retourné respecte le "Custom action URL" configuré dans la
     // console Firebase (Auth > Templates > Email address verification).
-    // En dev il pointe sur http://localhost:5173/, en prod il pointera sur
-    // l'URL Vercel — selon ce qu'on a réglé dans la console.
+    // En prod il doit pointer sur l'URL Vercel ; en dev sur http://localhost:5173/.
     const actionLink = await getAdminAuth().generateEmailVerificationLink(email)
 
-    // 2) Construction du mail brandé
-    const { subject, html, text } = buildVerificationEmail({
-      username: username || null,
-      actionLink,
-    })
+    // 2) Vérification des credentials EmailJS
+    const {
+      EMAILJS_SERVICE_ID: serviceId,
+      EMAILJS_TEMPLATE_ID: templateId,
+      EMAILJS_PUBLIC_KEY: publicKey,
+      EMAILJS_PRIVATE_KEY: privateKey,
+    } = process.env
 
-    // 3) Envoi via Resend
-    if (!process.env.RESEND_API_KEY) {
-      throw new Error('RESEND_API_KEY manquante côté Vercel.')
-    }
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    const fromEmail =
-      process.env.RESEND_FROM_EMAIL || 'SoundCheck <onboarding@resend.dev>'
-
-    const { data, error } = await resend.emails.send({
-      from: fromEmail,
-      to: email,
-      subject,
-      html,
-      text,
-    })
-
-    if (error) {
-      console.error('Resend error:', error)
-      return res
-        .status(502)
-        .json({ error: error.message || 'Resend a refusé l\'envoi.' })
+    if (!serviceId || !templateId || !publicKey || !privateKey) {
+      throw new Error('Variables EMAILJS_* manquantes côté Vercel.')
     }
 
-    return res.status(200).json({ success: true, id: data?.id })
+    // 3) Envoi via EmailJS. Les noms des variables doivent matcher EXACTEMENT
+    // ceux utilisés dans le template EmailJS (to_email, username, verification_link).
+    const result = await emailjs.send(
+      serviceId,
+      templateId,
+      {
+        to_email: email,
+        username: username || 'joueur',
+        verification_link: actionLink,
+      },
+      {
+        publicKey,
+        privateKey,
+      }
+    )
+
+    return res.status(200).json({
+      success: true,
+      status: result.status,
+      text: result.text,
+    })
   } catch (err) {
-    console.error('send-verification-email error:', err)
-    return res
-      .status(500)
-      .json({ error: err?.message || 'Erreur serveur lors de l\'envoi.' })
+    // EmailJS renvoie ses erreurs avec une propriété `text` parlante (ex:
+    // "The Public Key is invalid", "Service not found", etc.). On log un
+    // max pour faciliter le diagnostic via les Vercel Function logs.
+    const detail = err?.text || err?.message || String(err)
+    console.error('send-verification-email error:', detail, err)
+    return res.status(502).json({ error: detail })
   }
 }

@@ -204,21 +204,21 @@ Chaque écran a une couleur dominante différente.
 - [x] Design V2 editorial appliqué
 - [x] **V1 déployée sur Vercel** (sans Firebase encore)
 - [x] Refonte flux Game V3 (réponse → attribution joueur) + responsive mobile (commit `d6d0c5c`)
-- [x] **Firebase intégré (working tree, non-commit)** :
-  - Auth Google opérationnelle (testée)
-  - Auth Email/Password : code complet (`Login`, `Register`, `ForgotPassword`)
+- [x] **Firebase intégré, commit `bed603c` poussé sur Vercel le 2026-05-15** :
+  - Auth Google opérationnelle
+  - Auth Email/Password : `Login`, `Register`, `ForgotPassword`
   - Vérification d'email (`sendEmailVerification`) + bannière `EmailVerificationBanner` avec actions "renvoyer le lien" / "j'ai vérifié"
   - **Page de vérification custom `/verify`** : le lien du mail pointe sur l'app (pas sur Firebase). `VerifyEmail.jsx` détecte `?mode=verifyEmail&oobCode=...` au chargement, appelle `applyActionCode`, affiche un écran brandé (succès vert / erreur rose) puis redirige vers Home. L'utilisateur ne voit jamais d'UI Firebase générique.
-  - **Mail HTML custom via Resend (en prod uniquement)** : Firebase Spark verrouillant les templates, on bypasse l'envoi Firebase. Serverless function Vercel `api/send-verification-email.js` génère le lien via Firebase Admin SDK puis envoie un mail HTML brandé SoundCheck via Resend. En dev local (Vite ne sert pas `/api/*`), fallback automatique sur `sendEmailVerification()` de Firebase pour ne pas bloquer le développement.
+  - **Mail HTML custom via EmailJS (en prod uniquement)** : Firebase Spark verrouillant les templates, on bypasse l'envoi Firebase. Serverless function Vercel `api/send-verification-email.js` génère le lien via Firebase Admin SDK puis envoie le mail via **EmailJS** (Gmail connecté côté EmailJS comme expéditeur). Le template HTML est stocké dans le dashboard EmailJS (pas dans le code) avec les variables `{{username}}`, `{{verification_link}}`, `{{to_email}}`. En dev local (Vite ne sert pas `/api/*`), fallback automatique sur `sendEmailVerification()` de Firebase. (Migration depuis Resend faite le 2026-05-15 — Resend imposait un domaine vérifié pour envoyer à d'autres adresses que celle du compte.)
   - Création auto du doc `users/{uid}` (avec `provider: 'password'` ou `'google'`, `username`, `totalScore`, `gamesPlayed`, `gamesWon`)
   - `useGameHistory` hook + écrans `Profile`, `History`, `Leaderboard`
-- [ ] **Test bout-en-bout local de l'auth email** (signup → mail de vérif → login → logout)
-- [ ] **Vars d'env Firebase ajoutées dans Vercel** (avant push) — voir `.env.example`. En plus des 6 `VITE_FIREBASE_*` côté client, il faut maintenant aussi : `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (service account), `RESEND_API_KEY`, `RESEND_FROM_EMAIL`.
-- [ ] **Custom action URL Firebase à mettre à jour selon l'env** : actuellement `http://localhost:5173/` (dev). Avant chaque déploiement Vercel, changer dans Firebase Console > Auth > Templates > Email verification > "customize action URL" → mettre l'URL Vercel. (Une seule valeur possible côté Firebase, pas de séparation dev/prod automatique.)
-- [ ] Commit de l'intégration Firebase
-- [ ] Re-déploiement Vercel
+- [x] **Vars d'env Firebase ajoutées dans Vercel** (6 `VITE_FIREBASE_*` client + 3 Firebase Admin serveur : `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` + 4 EmailJS : `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY`)
+- [x] **Custom action URL Firebase** réglée sur l'URL Vercel
+- [x] Push + déploiement Vercel réussi (le site se charge correctement après fix `auth/invalid-api-key`)
+- [ ] **⚠️ Mail de vérif PAS REÇU en prod après inscription par email** — voir section "Problèmes ouverts" ci-dessous
 - [ ] Mode Otaku ajouté (service `animeThemesApi.js` à créer)
-- [ ] Durcir les règles Firestore (mode test expire dans 30j à compter de la création)
+- [ ] Durcir les règles Firestore (mode test expire dans 30j à compter de la création — créé le 2026-05-13 ish, donc expire vers le 2026-06-12)
+- [ ] Customiser aussi le mail de reset password via Resend (actuellement encore en Firebase basique)
 
 ## Setup Firebase actuel (projet `soundcheck-8fe5d`)
 
@@ -247,3 +247,70 @@ Chaque écran a une couleur dominante différente.
 - Préciser les limitations connues
 - Pour les requêtes Firestore, mentionner l'impact sur les quotas
 - Approche propre et professionnelle, sans hacks
+
+## Problèmes ouverts (à reprendre la prochaine fois)
+
+### 1. ⚠️ Mail de vérif pas reçu en prod (2026-05-15)
+
+**Symptôme** : après inscription par email sur la version Vercel déployée
+(commit `bed603c`), AUCUN mail n'arrive — ni le mail HTML brandé Resend,
+ni le mail Firebase basique en fallback.
+
+**Contexte** :
+- Le site Vercel se charge correctement (après fix `auth/invalid-api-key`
+  en ajoutant les 6 `VITE_FIREBASE_*` qui manquaient).
+- Les 5 env vars serveur (`FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY`,
+  `RESEND_API_KEY`, `RESEND_FROM_EMAIL`) sont déclarées sur Vercel.
+- Le compte Firebase est bien créé (Firebase Auth list montre le user).
+- En local avec `npm run dev`, le mail Firebase basique arrivait (fallback OK).
+
+**Pistes à explorer dans l'ordre** :
+1. **Vercel Functions logs** : Dashboard > projet > onglet "Logs" (ou
+   "Functions") → filtrer sur `send-verification-email`. Lire l'erreur
+   exacte. Probables suspects :
+   - `FIREBASE_PRIVATE_KEY` mal formatée (les `\n` perdus, ou guillemets
+     non retirés en copiant depuis le JSON service account)
+   - `RESEND_API_KEY` invalide ou révoquée
+   - `RESEND_FROM_EMAIL` rejeté par Resend (sender pas autorisé en test mode)
+2. **Test mode Resend** : sans domaine vérifié, Resend n'accepte d'envoyer
+   QU'À l'email avec lequel le compte Resend a été créé. Vérifier que
+   l'utilisateur a bien testé l'inscription avec CETTE adresse précise.
+3. **Vérifier dans le dashboard Resend** : section "Emails" → est-ce qu'il
+   y a une trace de tentative d'envoi ? Si oui, son statut (delivered,
+   bounced, rejected) ?
+4. **Tester l'endpoint isolément** : depuis devtools Network ou curl,
+   appeler `POST /api/send-verification-email` avec un body
+   `{ "email": "test@test.com", "username": "test" }` et lire la réponse.
+
+**Si le fallback Firebase ne s'est pas non plus déclenché**, c'est que
+l'erreur côté serverless est silencieuse côté front (le front a peut-être
+reçu un 200 menteur, ou l'inscription a une autre branche qui n'appelle
+pas du tout `sendBrandedVerificationEmail`). À vérifier dans
+`src/firebase/auth.js`.
+
+### 2. UserMenu dropdown : clics non-fonctionnels
+
+**Symptôme** : la dropdown du UserMenu (avatar en haut à droite de Home)
+s'ouvre bien au clic sur l'avatar, mais les 4 items à l'intérieur
+("Mon profil", "Mon historique", "Classement", "Se déconnecter") ne
+déclenchent jamais leur `onClick` — même un `console.log` placé dans le
+handler ne sort pas dans la console.
+
+**Workaround actuel** : `src/components/Home.jsx` expose les 4 actions
+en liens éditoriaux visibles directement (sous-composant `UserActions`).
+La dropdown originale a été simplifiée — `UserMenu.jsx` n'affiche plus
+qu'une carte d'identité (avatar + pseudo) sans interaction. Une note
+dans le code rappelle de ne pas remettre de dropdown tant que le bug
+n'est pas réparé.
+
+**Pistes à explorer** :
+1. Cache Vite stale (`rm -rf node_modules/.vite` puis `npm run dev`)
+2. Inspection DOM avec DevTools picker : voir l'élément réellement au-dessus
+   du bouton "Mon profil" via `document.elementsFromPoint(x, y)`
+3. Tester sans `<StrictMode>` dans `main.jsx`
+4. Tester en build de prod (`npm run build && npm run preview`)
+5. Soupçon n°1 : `backdrop-blur-md` sur le motion.div de la dropdown qui
+   casse le hit-testing dans certains contextes
+
+**Note** : ce bug est ancien (existait avant les changements Firebase) et
+n'est pas bloquant grâce au workaround `UserActions`.
