@@ -112,7 +112,7 @@ export default function Game({ players, config, onFinish }) {
       } catch (err) {
         console.error(err)
         if (!cancelled) {
-          setErrorMsg('Impossible de contacter Deezer. Vérifie ta connexion.')
+          setErrorMsg('Impossible de charger les titres. Vérifie ta connexion.')
           setPhase('error')
         }
       }

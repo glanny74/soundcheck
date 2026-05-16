@@ -28,7 +28,7 @@ import {
 const MARQUEE_ITEMS = [
   'Blind test',
   'Multijoueur',
-  'Deezer',
+  'Catalogue mondial',
   '4 modes de jeu',
   'Réflexes',
   'Top 100',
@@ -132,8 +132,8 @@ export default function Home({
             className="mt-10 max-w-[420px] text-base sm:text-lg text-text-secondary leading-relaxed"
           >
             Réunis tes amis, lance un extrait de 8 secondes et défiez-vous
-            pour deviner le morceau en premier. Multijoueur local, propulsé
-            par Deezer.
+            pour deviner le morceau en premier. Multijoueur local, catalogue
+            mondial.
           </motion.p>
 
           {/* CTA — pas un bouton plein, un lien magazine */}
@@ -181,8 +181,8 @@ export default function Home({
           />
           <Fact
             number="04"
-            label="Catalogue"
-            value="Deezer"
+            label="Manches"
+            value="5 · 10 · 15"
           />
         </motion.aside>
       </div>

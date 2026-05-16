@@ -525,7 +525,7 @@ function ArtistPicker({
         </span>
         <input
           type="text"
-          placeholder="Tape un nom d'artiste sur Deezer…"
+          placeholder="Tape un nom d'artiste…"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           className="flex-1 bg-transparent text-text-primary placeholder:text-text-tertiary
