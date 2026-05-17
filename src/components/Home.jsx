@@ -62,12 +62,16 @@ export default function Home({
         aria-hidden="true"
       />
 
-      {/* Bandeau du haut : version + édition à droite, signature à gauche */}
+      {/* Bandeau du haut : version + édition à droite, signature à gauche
+          z-20 (et non z-10) pour que le stacking context du top bar passe
+          au-dessus du main content (lui aussi z-10) — sinon la dropdown du
+          UserMenu, qui ouvre en absolu sous le trigger, est interceptée par
+          des divs transparents du main content lors du hit-testing. */}
       <motion.div
         variants={staggerContainer}
         initial="initial"
         animate="animate"
-        className="relative z-10 px-4 sm:px-10 pt-6 sm:pt-8 flex items-start justify-between gap-4"
+        className="relative z-20 px-4 sm:px-10 pt-6 sm:pt-8 flex items-start justify-between gap-4"
       >
         <motion.p
           variants={fadeUpChild}
@@ -79,15 +83,9 @@ export default function Home({
           </span>
         </motion.p>
 
-        {/* Bandeau utilisateur — carte d'identité (avatar+pseudo) + menu
-            d'actions juste en dessous, en style éditorial cohérent avec le
-            reste de l'app (numéros italique serif + flèche au hover).
-
-            La dropdown originale du UserMenu a été retirée (bug : les clics
-            sur ses items ne déclenchaient pas leur onClick). On y reviendra. */}
-        <motion.div variants={fadeUpChild} className="flex flex-col items-end gap-4">
-          <UserMenu isGuest={isGuest} />
-          <UserActions
+        {/* Menu utilisateur (avatar + dropdown au clic) */}
+        <motion.div variants={fadeUpChild}>
+          <UserMenu
             isGuest={isGuest}
             onProfile={onProfile}
             onHistory={onHistory}
@@ -209,61 +207,6 @@ export default function Home({
         </div>
       </div>
     </motion.main>
-  )
-}
-
-/* ----- Sous-composant : menu utilisateur en liens éditoriaux -----
-   Quatre actions stylées comme des liens magazine (numéro serif italique,
-   label en small caps, flèche qui glisse au hover). Couleur d'accent
-   différente par action pour rester cohérent avec le reste de l'app. */
-function UserActions({ isGuest, onProfile, onHistory, onLeaderboard, onLogout }) {
-  if (isGuest) {
-    return (
-      <ActionLink
-        number="01"
-        accent="pink"
-        label="Quitter le mode invité"
-        onClick={onLogout}
-      />
-    )
-  }
-  return (
-    <div className="flex flex-wrap items-center justify-end gap-x-5 sm:gap-x-6 gap-y-2">
-      <ActionLink number="01" accent="green" label="Profil" onClick={onProfile} />
-      <ActionLink number="02" accent="purple" label="Historique" onClick={onHistory} />
-      <ActionLink number="03" accent="blue" label="Classement" onClick={onLeaderboard} />
-      <ActionLink number="04" accent="pink" label="Déconnexion" onClick={onLogout} />
-    </div>
-  )
-}
-
-/* ----- Lien d'action éditorial : numéro serif + label + flèche ----- */
-function ActionLink({ number, accent, label, onClick }) {
-  // Map accent → classes Tailwind (Tailwind ne supporte pas les classes dynamiques
-  // construites par concaténation, donc on les déclare en entier ici)
-  const accentClasses = {
-    green: 'text-accent-green',
-    purple: 'text-accent-purple',
-    blue: 'text-accent-blue',
-    pink: 'text-accent-pink',
-  }
-  const accentText = accentClasses[accent] || 'text-accent-green'
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="editorial-link group cursor-pointer text-text-secondary
-                 hover:text-text-primary transition-colors"
-    >
-      <span className={`serif-italic ${accentText} text-sm leading-none`}>
-        {number}
-      </span>
-      <span className="font-display font-medium text-xs uppercase tracking-[0.2em]">
-        {label}
-      </span>
-      <span className={`arrow ${accentText} text-base leading-none`}>→</span>
-    </button>
   )
 }
 
