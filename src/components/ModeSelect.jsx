@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AVAILABLE_GENRES,
   AVAILABLE_LANGUAGES,
@@ -89,6 +89,27 @@ export default function ModeSelect({ onStart, onBack }) {
   const [selectedLanguage, setSelectedLanguage] = useState('all')
 
   const [error, setError] = useState('')
+
+  // Ref sur le bloc de config (slide-down sous la grille de modes). Sert à
+  // scroller automatiquement dessus quand l'utilisateur choisit un mode :
+  // sans ça, sur mobile le bloc apparaît hors-écran et on a l'impression
+  // qu'il ne se passe rien.
+  const configRef = useRef(null)
+
+  // Auto-scroll vers le bloc config dès qu'un mode est sélectionné. On
+  // attend 200ms pour laisser l'animation slide-down démarrer (height: 0
+  // → auto sur 500ms côté Framer Motion). Le scroll smooth (~600ms)
+  // se chevauche élégamment avec le reste de l'animation.
+  useEffect(() => {
+    if (!mode || !configRef.current) return
+    const timer = setTimeout(() => {
+      configRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [mode])
 
   // Recherche d'artiste avec debounce 350ms
   useEffect(() => {
@@ -287,11 +308,12 @@ export default function ModeSelect({ onStart, onBack }) {
         {mode && (
           <motion.div
             key={mode}
+            ref={configRef}
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.5, ease: EASE_OUT }}
-            className="relative z-10 mt-10 overflow-hidden"
+            className="relative z-10 mt-10 overflow-hidden scroll-mt-6"
           >
             <div
               className={`border-t-2 ${currentMode.border} pt-8`}
@@ -370,7 +392,7 @@ export default function ModeSelect({ onStart, onBack }) {
 
         <button
           onClick={handleStart}
-          className="editorial-link group cursor-pointer font-display font-medium text-2xl text-text-primary"
+          className="editorial-link-primary group cursor-pointer font-display font-medium text-2xl text-text-primary"
         >
           <span>Démarrer la partie</span>
           <span className="arrow text-accent-green text-3xl leading-none">→</span>

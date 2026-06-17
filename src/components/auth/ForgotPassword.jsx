@@ -1,13 +1,17 @@
 import { useState } from 'react'
-import { resetPassword } from '../../firebase/auth'
+import { resetPassword } from '../../supabase/auth'
 import AuthLayout from './AuthLayout'
 
 /*
   Écran "mot de passe oublié" — envoi d'un email de réinitialisation.
   ---------------------------------------------------------------------------
-  Flow simple : l'utilisateur entre son email, Firebase lui envoie un lien.
+  Flow simple : l'utilisateur entre son email, Supabase lui envoie un lien.
   Pour éviter de divulguer si un email existe ou non en BDD, on affiche
   toujours un message générique de succès après l'envoi.
+
+  Limitation connue (suivi migration) : le lien reçu ouvre une session de
+  récupération mais l'écran de SAISIE du nouveau mot de passe
+  (supabase.auth.updateUser) n'est pas encore implémenté.
 */
 
 export default function ForgotPassword({ onBack }) {
@@ -30,7 +34,7 @@ export default function ForgotPassword({ onBack }) {
     } catch (err) {
       // Note : on affiche quand même un succès générique pour éviter
       // de révéler si un email existe ou non
-      if (err?.code === 'auth/invalid-email') {
+      if ((err?.message || '').toLowerCase().includes('invalid email')) {
         setError('Email invalide.')
       } else {
         setSent(true)

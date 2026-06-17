@@ -29,8 +29,8 @@ export default function UserMenu({
   isGuest,
   onProfile,
   onHistory,
-  onLeaderboard,
   onLogout,
+  onHelp,
 }) {
   const { user, profile } = useAuth()
   const [open, setOpen] = useState(false)
@@ -150,15 +150,23 @@ export default function UserMenu({
                   label="Mon historique"
                   onClick={() => handleAction(onHistory)}
                 />
-                <MenuItem
-                  number="03"
-                  accent="text-accent-blue"
-                  label="Classement"
-                  onClick={() => handleAction(onLeaderboard)}
-                />
+                {/* Séparateur + entrée d'aide. onHelp est facultatif (la
+                    Home le passe ; d'autres écrans ne le passeront peut-être
+                    pas) — on cache simplement l'entrée si absent. */}
+                {onHelp && (
+                  <>
+                    <div className="border-t border-white/5" />
+                    <MenuItem
+                      number="03"
+                      accent="text-text-secondary"
+                      label="Comment jouer ?"
+                      onClick={() => handleAction(onHelp)}
+                    />
+                  </>
+                )}
                 <div className="border-t border-white/5" />
                 <MenuItem
-                  number="04"
+                  number={onHelp ? '04' : '03'}
                   accent="text-accent-pink"
                   label="Se déconnecter"
                   onClick={() => handleAction(onLogout)}
@@ -177,8 +185,16 @@ export default function UserMenu({
                     Tes parties ne sont pas sauvegardées.
                   </p>
                 </div>
+                {onHelp && (
+                  <MenuItem
+                    number="01"
+                    accent="text-text-secondary"
+                    label="Comment jouer ?"
+                    onClick={() => handleAction(onHelp)}
+                  />
+                )}
                 <MenuItem
-                  number="01"
+                  number={onHelp ? '02' : '01'}
                   accent="text-accent-pink"
                   label="Quitter le mode invité"
                   onClick={() => handleAction(onLogout)}

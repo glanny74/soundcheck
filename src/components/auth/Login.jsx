@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { signInWithEmail, signInWithGoogle } from '../../firebase/auth'
+import { signInWithEmail, signInWithGoogle } from '../../supabase/auth'
 import AuthLayout from './AuthLayout'
 
 /*
   Écran de connexion.
   ---------------------------------------------------------------------------
   Email/password OU Google. Après succès, le AuthContext détecte le user
-  via onAuthStateChanged et redirige automatiquement (logique dans App.jsx).
+  via onAuthStateChange et redirige automatiquement (logique dans App.jsx).
 */
 
 export default function Login({ onSwitchToRegister, onForgotPassword, onBack }) {
@@ -27,7 +27,7 @@ export default function Login({ onSwitchToRegister, onForgotPassword, onBack }) 
       await signInWithEmail({ email: email.trim(), password })
       // pas besoin de naviguer manuellement : AuthContext mettra à jour user
     } catch (err) {
-      setError(traduireErreurFirebase(err))
+      setError(traduireErreur(err))
     } finally {
       setLoading(false)
     }
@@ -37,10 +37,10 @@ export default function Login({ onSwitchToRegister, onForgotPassword, onBack }) 
     setError('')
     setLoading(true)
     try {
+      // Redirige vers Google — la page navigue, pas de retour ici en cas de succès
       await signInWithGoogle()
     } catch (err) {
-      setError(traduireErreurFirebase(err))
-    } finally {
+      setError(traduireErreur(err))
       setLoading(false)
     }
   }
@@ -190,22 +190,20 @@ function GoogleIcon() {
   )
 }
 
-/* ----- Traduction des codes d'erreur Firebase en français ----- */
-function traduireErreurFirebase(err) {
-  const code = err?.code || ''
+/* ----- Traduction des messages d'erreur Supabase en français ----- */
+function traduireErreur(err) {
   const msg = err?.message || 'Une erreur est survenue.'
-  if (code.includes('user-not-found') || code.includes('invalid-credential')) {
+  const lower = msg.toLowerCase()
+  if (lower.includes('invalid login credentials')) {
     return 'Email ou mot de passe incorrect.'
   }
-  if (code.includes('wrong-password')) return 'Mot de passe incorrect.'
-  if (code.includes('invalid-email')) return 'Email invalide.'
-  if (code.includes('too-many-requests')) {
+  if (lower.includes('email not confirmed')) {
+    return 'Ton adresse n\'est pas encore confirmée. Vérifie ta boîte mail (et les spams).'
+  }
+  if (lower.includes('too many requests') || err?.status === 429) {
     return 'Trop de tentatives. Réessaie dans quelques minutes.'
   }
-  if (code.includes('popup-closed-by-user')) {
-    return 'Connexion Google annulée.'
-  }
-  if (code.includes('network-request-failed')) {
+  if (lower.includes('failed to fetch') || lower.includes('network')) {
     return 'Problème de connexion réseau.'
   }
   return msg

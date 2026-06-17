@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { useAuth } from '../../hooks/useAuth'
-import { toDate } from '../../firebase/firestore'
+import { toDate } from '../../supabase/db'
 import {
   fadeUpChild,
   pageTransition,
@@ -20,7 +20,7 @@ import {
   n'affiche pas cette entrée pour les invités).
 */
 
-export default function Profile({ onBack }) {
+export default function Profile({ onBack, onStart }) {
   const { user, profile } = useAuth()
 
   // Si jamais on arrive ici sans user (bug), on évite le crash
@@ -132,6 +132,41 @@ export default function Profile({ onBack }) {
             </p>
           </div>
         </motion.div>
+
+        {/* Empty state — affiché uniquement si l'utilisateur n'a encore joué
+            aucune partie. Le bloc des cartes de stats reste visible en
+            dessous mais l'empty state explique pourquoi elles sont à zéro
+            et propose un CTA direct pour lancer une partie. */}
+        {(profile.gamesPlayed || 0) === 0 && (
+          <motion.div
+            variants={fadeUpChild}
+            className="mt-12 p-6 sm:p-8 bg-bg-card/60 border border-white/5 rounded-2xl"
+          >
+            <p className="text-[10px] uppercase tracking-[0.3em] text-text-tertiary mb-3">
+              Première partie{' '}
+              <span className="serif-italic normal-case tracking-normal text-accent-green">
+                à venir
+              </span>
+            </p>
+            <p className="font-display font-bold text-2xl sm:text-3xl text-text-primary mb-3 leading-tight">
+              Pas encore de stats —{' '}
+              <span className="serif-italic text-text-tertiary">c'est normal.</span>
+            </p>
+            <p className="text-text-secondary text-sm sm:text-base leading-relaxed max-w-lg mb-6">
+              Tes parties jouées, scores et victoires viendront se loger dans
+              les cartes ci-dessous dès que tu auras lancé ta première manche.
+            </p>
+            {onStart && (
+              <button
+                onClick={onStart}
+                className="editorial-link group cursor-pointer font-display font-medium text-base sm:text-lg text-text-primary"
+              >
+                <span>Démarrer ma première partie</span>
+                <span className="arrow text-accent-green text-xl leading-none">→</span>
+              </button>
+            )}
+          </motion.div>
+        )}
 
         {/* Cartes de stats */}
         <motion.div

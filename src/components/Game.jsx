@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
-import { saveGame } from '../firebase/firestore'
+import { saveGame } from '../supabase/db'
 import { useAuth } from '../hooks/useAuth'
 import {
   getArtistTopTracks,
@@ -12,6 +12,11 @@ import { buildQuestion, formatLabel } from '../utils/gameLogic'
 import { EASE_OUT, pageTransition } from '../utils/motion'
 import { playCorrect, playTick, playWrong } from '../utils/sounds'
 import Button from './ui/Button'
+import GameOnboarding from './GameOnboarding'
+
+// Clé localStorage utilisée pour ne montrer l'onboarding qu'au premier passage.
+// Lu côté Game.jsx au montage, écrit quand l'utilisateur dismiss le modal.
+const ONBOARDING_STORAGE_KEY = 'sc_game_onboarded'
 
 /*
   Écran Game V3 — flux inversé "réponse d'abord, puis joueur".
@@ -41,9 +46,9 @@ const POINTS_PER_CORRECT = 10
 const BAR_COUNT = 7
 
 export default function Game({ players, config, onFinish }) {
-  // user/profile : utilisé en fin de partie pour sauvegarder en Firestore.
+  // user : utilisé en fin de partie pour décider si on sauvegarde (connecté).
   // Si non connecté (invité) → on bypass simplement la sauvegarde.
-  const { user, profile } = useAuth()
+  const { user } = useAuth()
 
   // ---------------- état principal ----------------
   const [phase, setPhase] = useState('loading')
@@ -63,6 +68,29 @@ export default function Game({ players, config, onFinish }) {
 
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME_S)
   const [lastResult, setLastResult] = useState(null) // 'correct' | 'wrong' | 'timeout'
+
+  // Onboarding : affiché au tout premier passage sur cet écran, dismiss
+  // persistant via localStorage. Lazy init pour éviter une 2e render inutile.
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return window.localStorage.getItem(ONBOARDING_STORAGE_KEY) !== 'true'
+    } catch {
+      // Si localStorage est inaccessible (mode privé, quota...), on n'affiche
+      // pas le modal pour ne pas spammer à chaque partie.
+      return false
+    }
+  })
+
+  function dismissOnboarding() {
+    setShowOnboarding(false)
+    try {
+      window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true')
+    } catch {
+      // Échec d'écriture silencieux — le modal réapparaîtra la session
+      // suivante, ce n'est pas critique.
+    }
+  }
 
   // ---------------- refs ----------------
   const audioRef = useRef(null)
@@ -296,9 +324,9 @@ export default function Game({ players, config, onFinish }) {
   }
 
   // Fin de partie : on calcule la durée, on détermine le gagnant, et si
-  // l'utilisateur est connecté, on sauvegarde la partie en Firestore avant
-  // de remonter à App pour aller à Results. La sauvegarde est non-bloquante :
-  // si elle échoue (réseau, règles Firestore...), on continue quand même.
+  // l'utilisateur est connecté, on sauvegarde la partie en base (Supabase)
+  // avant de remonter à App pour aller à Results. La sauvegarde est non
+  // bloquante : si elle échoue (réseau, RLS...), on continue quand même.
   async function finishGame(maybeBoard) {
     setPhase('finished')
 
@@ -307,14 +335,14 @@ export default function Game({ players, config, onFinish }) {
     const winner = ranked[0]?.name || ''
     const duration = Math.round((Date.now() - startTimeRef.current) / 1000)
 
-    // Sauvegarde Firestore — uniquement si l'utilisateur est connecté
-    // (les invités ne sauvegardent rien, conformément au brief)
-    if (user && profile) {
+    // Sauvegarde — uniquement si l'utilisateur est connecté (les invités ne
+    // sauvegardent rien, conformément au brief). On ne dépend PAS de `profile`
+    // ici : l'identité du joueur est déterminée côté serveur par la RPC
+    // record_game (auth.uid()). Garder le profil dans la condition risquait de
+    // sauter la sauvegarde si le profil n'était pas encore chargé.
+    if (user) {
       try {
         await saveGame({
-          userId: user.uid,
-          username: profile.username,
-          photoURL: profile.photoURL,
           mode: config.mode,
           modeParams: {
             // On stocke uniquement les noms (pas les objets complets)
@@ -335,8 +363,9 @@ export default function Game({ players, config, onFinish }) {
           duration,
         })
       } catch (err) {
-        // On loggue mais on ne bloque pas le flow — le joueur va voir Results
-        console.warn('Échec de la sauvegarde de la partie :', err)
+        // On loggue mais on ne bloque pas le flow — le joueur va voir Results.
+        // console.error (et pas warn) pour bien voir l'erreur en debug.
+        console.error('Échec de la sauvegarde de la partie :', err)
       }
     }
 
@@ -379,6 +408,12 @@ export default function Game({ players, config, onFinish }) {
       {...pageTransition}
       className="relative min-h-screen w-full overflow-hidden"
     >
+      {/* Onboarding au premier passage. AnimatePresence gère la sortie en fondu
+          quand l'utilisateur clique "C'est compris". */}
+      <AnimatePresence>
+        {showOnboarding && <GameOnboarding onDismiss={dismissOnboarding} />}
+      </AnimatePresence>
+
       {/* IMPORTANT : pas de crossOrigin sur l'audio Deezer — leurs MP3 preview
           ne renvoient pas les bons en-têtes CORS et l'audio se bloque sinon.
           Conséquence : le vrai visualiseur AnalyserNode ne marche pas, on
@@ -431,13 +466,17 @@ export default function Game({ players, config, onFinish }) {
       <div className="relative z-10 px-4 sm:px-10 mt-6 sm:mt-8 grid grid-cols-12 gap-4 sm:gap-6 pb-12">
         {/* Colonne centrale (9 cols desktop, 12 mobile) */}
         <section className="col-span-12 lg:col-span-9 order-2 lg:order-1">
-          {/* Timer circulaire SVG centré */}
+          {/* Timer circulaire SVG centré. On lui passe `frozen` quand on
+              est en phase attributing : il bascule alors en gris et affiche
+              "Temps figé" sous le cercle pour bien indiquer qu'il n'y a plus
+              de pression — on a tout notre temps pour choisir le joueur. */}
           <div className="flex justify-center mb-6 sm:mb-8">
             <CircularTimer
               seconds={timeLeft}
               total={QUESTION_TIME_S}
               danger={timerDanger}
               showVisualizer={phase === 'playing'}
+              frozen={phase === 'attributing'}
             />
           </div>
 
@@ -594,7 +633,7 @@ export default function Game({ players, config, onFinish }) {
             >
               <button
                 onClick={advanceToNext}
-                className="editorial-link group cursor-pointer font-display font-medium text-xl sm:text-2xl text-text-primary"
+                className="editorial-link-primary group cursor-pointer font-display font-medium text-xl sm:text-2xl text-text-primary"
               >
                 <span>{isLastRound ? 'Voir les résultats' : 'Manche suivante'}</span>
                 <span className="arrow text-accent-green text-2xl sm:text-3xl leading-none">→</span>
@@ -639,12 +678,20 @@ function CenteredMessage({ title, subtitle, action }) {
 /* ----- Timer circulaire SVG + visualiseur décoratif centré -----
     Note : le visualiseur n'est plus "réactif" au son (Deezer ne sert pas
     les bons headers CORS sur les MP3 preview, ce qui empêche createMediaElementSource).
-    On utilise une animation CSS qui simule un visualizer. C'est purement décoratif. */
-function CircularTimer({ seconds, total, danger, showVisualizer }) {
+    On utilise une animation CSS qui simule un visualizer. C'est purement décoratif.
+
+    `frozen` : indique qu'on est en phase d'attribution. Le timer se grise et
+    affiche un label "Temps figé" pour signifier qu'il n'y a plus de pression. */
+function CircularTimer({ seconds, total, danger, showVisualizer, frozen = false }) {
   const R = 84
   const C = 2 * Math.PI * R
   const offset = C * (1 - seconds / total)
-  const color = danger ? 'var(--color-accent-pink)' : 'var(--color-accent-green)'
+  // Couleur du cercle : gris si figé, rose si en danger, vert sinon
+  const color = frozen
+    ? 'var(--color-text-tertiary)'
+    : danger
+      ? 'var(--color-accent-pink)'
+      : 'var(--color-accent-green)'
 
   return (
     <div className="relative w-[160px] h-[160px] sm:w-[200px] sm:h-[200px]">
@@ -681,6 +728,21 @@ function CircularTimer({ seconds, total, danger, showVisualizer }) {
                 style={{ animationDelay: `${i * 0.12}s` }}
               />
             ))}
+          </div>
+        ) : frozen ? (
+          // En phase d'attribution : on n'affiche pas le chiffre (qui resterait
+          // figé à sa dernière valeur, ce qui est confusant), mais une indication
+          // explicite "Temps figé" en label éditorial.
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="serif-italic text-text-tertiary text-2xl sm:text-3xl leading-none">
+              ∞
+            </span>
+            <span className="text-[9px] uppercase tracking-[0.3em] text-text-tertiary">
+              Temps{' '}
+              <span className="serif-italic normal-case tracking-normal text-text-secondary">
+                figé
+              </span>
+            </span>
           </div>
         ) : (
           <span
@@ -802,6 +864,18 @@ function ChoiceCard({ index, track, onClick }) {
         {String(index).padStart(2, '0')}
       </span>
 
+      {/* Hint clavier (desktop uniquement) — rappel discret de la touche
+          numéro correspondante pour les joueurs qui jouent avec un clavier. */}
+      <span
+        className="hidden sm:inline-flex absolute top-3 right-3 items-center gap-1.5 text-[9px] uppercase tracking-[0.25em] text-text-tertiary pointer-events-none"
+        aria-hidden="true"
+      >
+        <span className="serif-italic normal-case tracking-normal">touche</span>
+        <kbd className="px-1.5 py-0.5 border border-white/15 rounded text-text-secondary font-mono text-[10px] leading-none">
+          {index}
+        </kbd>
+      </span>
+
       <p className="relative text-[10px] uppercase tracking-[0.3em] text-text-tertiary mb-2">
         Proposition{' '}
         <span className="serif-italic normal-case tracking-normal">
@@ -849,6 +923,17 @@ function PlayerAttributeCard({ index, player, onClick }) {
         aria-hidden="true"
       >
         {String(index).padStart(2, '0')}
+      </span>
+
+      {/* Hint clavier (desktop uniquement) — rappel de la touche pour
+          attribuer la réponse à ce joueur (1-5). */}
+      <span
+        className="hidden sm:inline-flex absolute top-2 right-2 items-center gap-1 text-[9px] uppercase tracking-[0.25em] text-text-tertiary pointer-events-none"
+        aria-hidden="true"
+      >
+        <kbd className="px-1.5 py-0.5 border border-white/15 rounded text-text-secondary font-mono text-[10px] leading-none">
+          {index}
+        </kbd>
       </span>
 
       <span className={`serif-italic ${accent} text-sm`}>

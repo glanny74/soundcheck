@@ -115,7 +115,9 @@ body {
 }
 .animate-marquee { animation: marqueeScroll 40s linear infinite; }
 
-/* Underline tracé qui apparaît au hover (CTA editorial) */
+/* Underline tracé qui apparaît au hover (CTA editorial secondaire).
+   Utilisé pour les actions secondaires : retour, "voir plus", "ou nouvelle
+   partie", etc. */
 .editorial-link {
   position: relative;
   display: inline-flex;
@@ -145,6 +147,49 @@ body {
 .editorial-link:hover .arrow,
 .editorial-link:focus-visible .arrow {
   transform: translateX(8px);
+}
+
+/* Variante "primary" — pour les CTAs principaux d'action (démarrer une partie,
+   continuer, etc.). Différence avec le editorial-link classique :
+   - underline PERSISTANT à 40% d'opacité (et plus épais au hover),
+     pour que l'élément se lise immédiatement comme interactif
+     même au repos
+   - léger padding vertical pour augmenter la zone de clic
+   - hover : underline qui passe à 100% + arrow qui glisse vers la droite
+   On garde la sobriété editorial (pas de fond plein vert qui casserait la DA). */
+.editorial-link-primary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+.editorial-link-primary::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.35;
+  transform-origin: left;
+  transition:
+    opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.editorial-link-primary:hover::after,
+.editorial-link-primary:focus-visible::after {
+  opacity: 1;
+  height: 3px;
+}
+.editorial-link-primary .arrow {
+  display: inline-block;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.editorial-link-primary:hover .arrow,
+.editorial-link-primary:focus-visible .arrow {
+  transform: translateX(10px);
 }
 
 /* Helper d'italique serif éditorial */

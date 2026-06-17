@@ -1,4 +1,6 @@
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
+import { useState } from 'react'
+import HowToPlay from './HowToPlay'
 import UserMenu from './ui/UserMenu'
 import {
   EASE_OUT,
@@ -33,7 +35,7 @@ const MARQUEE_ITEMS = [
   'Réflexes',
   'Top 100',
   '8 secondes',
-  'Premier qui buzz',
+  'Réponse + joueur',
   'Tous les genres',
 ]
 
@@ -42,9 +44,13 @@ export default function Home({
   onLogout,
   onProfile,
   onHistory,
-  onLeaderboard,
   isGuest = false,
 }) {
+  // État local : ouverture du modal "Comment jouer ?". Pas de persistance,
+  // c'est de l'aide à la demande, déclenchée par le lien sous le CTA OU par
+  // l'entrée correspondante dans UserMenu.
+  const [showHelp, setShowHelp] = useState(false)
+
   return (
     <motion.main
       key="home"
@@ -83,14 +89,16 @@ export default function Home({
           </span>
         </motion.p>
 
-        {/* Menu utilisateur (avatar + dropdown au clic) */}
+        {/* Menu utilisateur (avatar + dropdown au clic). On lui passe aussi
+            onHelp pour exposer "Comment jouer ?" depuis n'importe quelle
+            session (en plus du lien visible sous le CTA). */}
         <motion.div variants={fadeUpChild}>
           <UserMenu
             isGuest={isGuest}
             onProfile={onProfile}
             onHistory={onHistory}
-            onLeaderboard={onLeaderboard}
             onLogout={onLogout}
+            onHelp={() => setShowHelp(true)}
           />
         </motion.div>
       </motion.div>
@@ -134,22 +142,40 @@ export default function Home({
             mondial.
           </motion.p>
 
-          {/* CTA — pas un bouton plein, un lien magazine */}
+          {/* CTA principal + lien secondaire d'aide */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1.0, duration: 0.6, ease: EASE_OUT }}
-            className="mt-10 sm:mt-12"
+            className="mt-10 sm:mt-12 flex flex-col items-start gap-5"
           >
             <button
               onClick={onStart}
-              className="editorial-link group cursor-pointer
+              className="editorial-link-primary group cursor-pointer
                          font-display font-medium text-xl sm:text-3xl
                          text-text-primary"
             >
               <span>Démarrer une partie</span>
               <span className="arrow text-accent-green text-2xl sm:text-4xl leading-none">
                 →
+              </span>
+            </button>
+
+            {/* Lien secondaire : ouvre le modal des règles. Discret pour ne
+                pas concurrencer le CTA principal, mais visible pour les
+                nouveaux joueurs qui cherchent un fil d'introduction. */}
+            <button
+              onClick={() => setShowHelp(true)}
+              className="editorial-link group cursor-pointer
+                         text-[11px] uppercase tracking-[0.3em] text-text-tertiary
+                         hover:text-text-secondary transition-colors"
+            >
+              <span>
+                Comment{' '}
+                <span className="serif-italic normal-case tracking-normal text-text-secondary">
+                  ça se joue
+                </span>{' '}
+                ?
               </span>
             </button>
           </motion.div>
@@ -184,6 +210,12 @@ export default function Home({
           />
         </motion.aside>
       </div>
+
+      {/* Modal "Comment jouer ?" — ouvert via le lien sous le CTA ou via
+          l'entrée correspondante dans le UserMenu */}
+      <AnimatePresence>
+        {showHelp && <HowToPlay onClose={() => setShowHelp(false)} />}
+      </AnimatePresence>
 
       {/* Marquee bas : ticker magazine */}
       {/* Note : passé de absolute à relative pour ne plus chevaucher le contenu

@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { signInWithGoogle, signUpWithEmail } from '../../firebase/auth'
+import { signInWithGoogle, signUpWithEmail } from '../../supabase/auth'
 import AuthLayout from './AuthLayout'
 
 /*
   Écran d'inscription.
   ---------------------------------------------------------------------------
   Trois champs : username (unique), email, password. Validation côté client
-  basique avant d'envoyer à Firebase. Les vraies vérifications (unicité du
-  username, force du password ≥ 6 caractères) sont déléguées à
-  signUpWithEmail() qui throw en cas de problème.
+  basique avant d'envoyer à Supabase.
+
+  Particularité Supabase : la confirmation d'email est requise. signUp ne
+  connecte donc PAS l'utilisateur — il reçoit un mail et doit cliquer le lien
+  avant de pouvoir se connecter. On affiche pour ça un écran « vérifie ta
+  boîte mail » (état `sent`) au lieu de rediriger vers Home.
 */
 
 export default function Register({ onSwitchToLogin, onBack }) {
@@ -17,12 +20,13 @@ export default function Register({ onSwitchToLogin, onBack }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sent, setSent] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
 
-    // Validation client minimale (Firebase fera le reste)
+    // Validation client minimale (Supabase fera le reste)
     const trimmedUsername = username.trim()
     if (trimmedUsername.length < 3) {
       setError('Le pseudo doit faire au moins 3 caractères.')
@@ -48,6 +52,10 @@ export default function Register({ onSwitchToLogin, onBack }) {
         password,
         username: trimmedUsername,
       })
+      // Compte créé : un mail de confirmation est parti. On affiche l'écran
+      // d'attente. (Si la confirmation était désactivée, AuthContext aurait
+      // déjà redirigé via le changement de session.)
+      setSent(true)
     } catch (err) {
       setError(traduireErreur(err))
     } finally {
@@ -59,10 +67,10 @@ export default function Register({ onSwitchToLogin, onBack }) {
     setError('')
     setLoading(true)
     try {
+      // Redirige vers Google — la page navigue, pas de retour ici en cas de succès
       await signInWithGoogle()
     } catch (err) {
       setError(traduireErreur(err))
-    } finally {
       setLoading(false)
     }
   }
@@ -87,15 +95,34 @@ export default function Register({ onSwitchToLogin, onBack }) {
       }
     >
       <button
-        onClick={onBack}
+        onClick={sent ? onSwitchToLogin : onBack}
         className="editorial-link group cursor-pointer text-text-secondary hover:text-text-primary text-sm mb-6"
       >
         <span className="arrow text-accent-purple text-xl leading-none rotate-180 inline-block">
           →
         </span>
-        <span>Retour</span>
+        <span>{sent ? 'Aller à la connexion' : 'Retour'}</span>
       </button>
 
+      {sent ? (
+        <div className="space-y-4">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-accent-purple">
+            Inscription —{' '}
+            <span className="serif-italic normal-case tracking-normal text-text-secondary">
+              presque fini
+            </span>
+          </p>
+          <p className="font-display font-bold text-2xl text-text-primary">
+            Vérifie ta boîte mail.
+          </p>
+          <p className="text-text-secondary text-sm leading-relaxed">
+            On a envoyé un lien de confirmation à <strong>{email}</strong>.
+            Clique dessus pour activer ton compte, puis reviens te connecter.
+            Pense à vérifier ton dossier spam.
+          </p>
+        </div>
+      ) : (
+      <>
       <form onSubmit={handleSubmit} className="space-y-6">
         <FieldLine label="Pseudo" accent="purple">
           <input
@@ -173,6 +200,8 @@ export default function Register({ onSwitchToLogin, onBack }) {
         <GoogleIcon />
         <span>S'inscrire avec Google</span>
       </button>
+      </>
+      )}
     </AuthLayout>
   )
 }
@@ -204,12 +233,21 @@ function GoogleIcon() {
 }
 
 function traduireErreur(err) {
-  const code = err?.code || ''
   const msg = err?.message || 'Une erreur est survenue.'
-  if (code.includes('email-already-in-use')) return 'Cet email est déjà associé à un compte.'
-  if (code.includes('invalid-email')) return 'Email invalide.'
-  if (code.includes('weak-password')) return 'Mot de passe trop faible (min 6 caractères).'
-  if (code.includes('popup-closed-by-user')) return 'Connexion Google annulée.'
+  const lower = msg.toLowerCase()
+  if (lower.includes('user already registered') || lower.includes('already been registered')) {
+    return 'Cet email est déjà associé à un compte.'
+  }
+  if (lower.includes('password should be at least')) {
+    return 'Mot de passe trop faible (min 6 caractères).'
+  }
+  if (lower.includes('invalid email') || lower.includes('unable to validate email')) {
+    return 'Email invalide.'
+  }
+  if (lower.includes('too many requests') || err?.status === 429) {
+    return 'Trop de demandes. Réessaie dans quelques minutes.'
+  }
+  // Erreur métier qu'on lève nous-mêmes (pseudo déjà pris)
   if (msg.includes('déjà pris')) return msg
   return msg
 }

@@ -1,26 +1,23 @@
 /*
   AuthContext — état d'authentification partagé dans toute l'app.
   ---------------------------------------------------------------------------
-  C'est l'UNIQUE entorse à la règle "pas de Context" qu'on s'était fixée
-  en V1. On l'introduit ici parce que l'auth doit être accessible partout :
-  Header (avatar), Game (sauvegarde), Profile, Leaderboard, etc.
+  C'est l'UNIQUE entorse à la règle « pas de Context » qu'on s'était fixée :
+  l'auth doit être accessible partout (Home, Game, Profile, Leaderboard...).
 
-  Le Context expose :
-   - user           : l'objet User Firebase (ou null si déconnecté)
-   - profile        : le profil étendu Firestore (username, photoURL, stats)
-   - loading        : true tant qu'on n'a pas terminé le check initial
-   - isAuthenticated: shortcut booléen
-   - refreshProfile : pour forcer un re-fetch du profil (après update)
+  Version Supabase (remplace la version Firebase). Le Context expose :
+   - user           : l'objet User Supabase (ou null si déconnecté)
+   - profile        : le profil étendu PostgreSQL (username, photoURL, stats)
+   - loading        : true tant que le check de session initial n'est pas fini
+   - isAuthenticated: raccourci booléen
+   - refreshProfile : force un re-fetch du profil (ex : après update du pseudo)
 
-  L'authentification persiste automatiquement entre les sessions grâce
-  au comportement par défaut de Firebase Auth (stockage localStorage).
+  La session persiste automatiquement entre les rechargements (localStorage,
+  géré par supabase-js).
 */
 
 import { createContext, useContext, useEffect, useState } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from '../firebase/config'
-import { reloadCurrentUser } from '../firebase/auth'
-import { getUserProfile } from '../firebase/firestore'
+import { supabase } from '../supabase/config'
+import { getUserProfile } from '../supabase/db'
 
 const AuthContext = createContext(null)
 
@@ -29,47 +26,60 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Écoute les changements d'état d'auth Firebase (login/logout/refresh token)
+  // 1) Détermination de la session : une lecture initiale + un abonnement aux
+  //    changements (login, logout, retour de lien email/OAuth, refresh token).
+  //    On ne fait QUE mettre à jour `user` ici. Le chargement du profil se
+  //    fait dans un second effet : appeler une requête Supabase asynchrone
+  //    directement dans le callback onAuthStateChange peut provoquer un blocage
+  //    (limitation documentée), on l'évite en découplant les deux.
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      setUser(fbUser)
+    let active = true
 
-      if (fbUser) {
-        // Utilisateur connecté → on charge son profil Firestore
-        try {
-          const prof = await getUserProfile(fbUser.uid)
-          setProfile(prof)
-        } catch (err) {
-          console.error('Erreur chargement profil :', err)
-          setProfile(null)
-        }
-      } else {
-        setProfile(null)
-      }
-
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!active) return
+      setUser(session?.user ?? null)
       setLoading(false)
     })
 
-    return () => unsubscribe()
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
   }, [])
 
-  // Permet à un composant (ex: Profile après update) de forcer le rafraîchissement
+  // 2) Chargement du profil étendu à chaque changement d'utilisateur.
+  useEffect(() => {
+    if (!user) {
+      setProfile(null)
+      return
+    }
+
+    let active = true
+    getUserProfile(user.id)
+      .then((prof) => {
+        if (active) setProfile(prof)
+      })
+      .catch((err) => {
+        console.error('Erreur chargement profil :', err)
+        if (active) setProfile(null)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [user])
+
+  // Permet à un composant (ex : Profile après update) de forcer le re-fetch.
   async function refreshProfile() {
     if (!user) return
-    const prof = await getUserProfile(user.uid)
+    const prof = await getUserProfile(user.id)
     setProfile(prof)
-  }
-
-  // Recharge le user Firebase pour récupérer la valeur à jour de
-  // `emailVerified` après que l'utilisateur a cliqué sur le lien dans son mail.
-  // On crée un nouvel objet pour forcer React à détecter le changement.
-  async function refreshUser() {
-    const fresh = await reloadCurrentUser()
-    if (fresh) {
-      // Spread pour bien créer une nouvelle référence (Firebase mute l'objet
-      // currentUser en place sans changer son identité)
-      setUser({ ...fresh })
-    }
   }
 
   const value = {
@@ -78,13 +88,12 @@ export function AuthProvider({ children }) {
     loading,
     isAuthenticated: !!user,
     refreshProfile,
-    refreshUser,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-// Hook custom pour accéder au Context, lance une erreur si utilisé hors AuthProvider
+// Hook custom pour accéder au Context, lance une erreur si utilisé hors Provider
 export function useAuth() {
   const ctx = useContext(AuthContext)
   if (!ctx) {

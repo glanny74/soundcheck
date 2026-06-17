@@ -1,18 +1,18 @@
 /*
   Hook custom pour récupérer l'historique des parties d'un utilisateur.
   ---------------------------------------------------------------------------
-  Encapsule la logique de pagination Firestore (chargement initial + "load more")
-  pour que le composant History.jsx reste simple.
+  Encapsule la pagination (chargement initial + « voir plus ») pour que le
+  composant History.jsx reste simple.
 
   Usage :
     const { games, loading, error, hasMore, loadMore } = useGameHistory(userId)
 
-  Note : chaque page = 1 lecture par game (10 lectures par défaut).
-  Le quota gratuit Firestore est de 50 000 lectures/jour → largement suffisant.
+  Pagination Supabase : on avance par offset (nombre de parties déjà chargées),
+  plus simple que les curseurs Firestore. getUserGames renvoie nextOffset.
 */
 
 import { useCallback, useEffect, useState } from 'react'
-import { getUserGames } from '../firebase/firestore'
+import { getUserGames } from '../supabase/db'
 
 export function useGameHistory(userId, pageSize = 10) {
   const [games, setGames] = useState([])
@@ -20,7 +20,7 @@ export function useGameHistory(userId, pageSize = 10) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState(null)
   const [hasMore, setHasMore] = useState(false)
-  const [lastDoc, setLastDoc] = useState(null)
+  const [offset, setOffset] = useState(0)
 
   // Chargement initial — déclenché à chaque changement de userId
   const loadInitial = useCallback(async () => {
@@ -31,10 +31,10 @@ export function useGameHistory(userId, pageSize = 10) {
     setLoading(true)
     setError(null)
     try {
-      const result = await getUserGames(userId, pageSize)
+      const result = await getUserGames(userId, pageSize, 0)
       setGames(result.games)
       setHasMore(result.hasMore)
-      setLastDoc(result.lastDoc)
+      setOffset(result.nextOffset)
     } catch (err) {
       console.error('Erreur historique :', err)
       setError(err)
@@ -47,22 +47,22 @@ export function useGameHistory(userId, pageSize = 10) {
     loadInitial()
   }, [loadInitial])
 
-  // Charge la page suivante (concaténation aux jeux déjà chargés)
+  // Charge la page suivante (concaténation aux parties déjà chargées)
   const loadMore = useCallback(async () => {
-    if (!userId || !lastDoc || !hasMore || loadingMore) return
+    if (!userId || !hasMore || loadingMore) return
     setLoadingMore(true)
     try {
-      const result = await getUserGames(userId, pageSize, lastDoc)
+      const result = await getUserGames(userId, pageSize, offset)
       setGames((prev) => [...prev, ...result.games])
       setHasMore(result.hasMore)
-      setLastDoc(result.lastDoc)
+      setOffset(result.nextOffset)
     } catch (err) {
       console.error('Erreur load more historique :', err)
       setError(err)
     } finally {
       setLoadingMore(false)
     }
-  }, [userId, lastDoc, hasMore, loadingMore, pageSize])
+  }, [userId, offset, hasMore, loadingMore, pageSize])
 
   return {
     games,

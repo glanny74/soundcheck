@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { useState } from 'react'
-import { toDate } from '../../firebase/firestore'
+import { toDate } from '../../supabase/db'
 import { useAuth } from '../../hooks/useAuth'
 import { useGameHistory } from '../../hooks/useGameHistory'
 import {
@@ -29,7 +29,7 @@ const MODE_LABELS = {
 export default function History({ onBack }) {
   const { user } = useAuth()
   const { games, loading, loadingMore, error, hasMore, loadMore } =
-    useGameHistory(user?.uid)
+    useGameHistory(user?.id)
 
   return (
     <motion.main

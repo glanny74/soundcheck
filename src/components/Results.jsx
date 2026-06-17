@@ -188,27 +188,46 @@ export default function Results({ players, onReplay, onNewGame }) {
           </motion.div>
         )}
 
-        {/* CTAs minimalistes éditoriaux */}
+        {/* CTAs minimalistes éditoriaux — sous-label en small caps pour
+            expliciter ce que chaque action fait (sinon Rejouer/Nouvelle
+            partie sont ambigus pour qui découvre le jeu). */}
         <motion.div
           variants={fadeUpChild}
-          className="mt-16 flex flex-col sm:flex-row gap-8 sm:gap-12 justify-center items-center"
+          className="mt-16 flex flex-col sm:flex-row gap-10 sm:gap-16 justify-center items-start sm:items-center"
         >
-          <button
-            onClick={onReplay}
-            className="editorial-link group cursor-pointer font-display font-medium text-2xl text-text-primary"
-          >
-            <span>Rejouer</span>
-            <span className="arrow text-accent-green text-3xl leading-none">→</span>
-          </button>
-          <button
-            onClick={onNewGame}
-            className="editorial-link group cursor-pointer font-display font-medium text-2xl text-text-secondary"
-          >
-            <span>
-              <span className="serif-italic">ou</span> nouvelle partie
-            </span>
-            <span className="arrow text-text-secondary text-3xl leading-none">→</span>
-          </button>
+          <div className="flex flex-col items-start sm:items-center gap-2">
+            <button
+              onClick={onReplay}
+              className="editorial-link group cursor-pointer font-display font-medium text-2xl text-text-primary"
+            >
+              <span>Rejouer</span>
+              <span className="arrow text-accent-green text-3xl leading-none">→</span>
+            </button>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-text-tertiary">
+              Mêmes joueurs,{' '}
+              <span className="serif-italic normal-case tracking-normal text-text-secondary">
+                nouveau mode
+              </span>
+            </p>
+          </div>
+
+          <div className="flex flex-col items-start sm:items-center gap-2">
+            <button
+              onClick={onNewGame}
+              className="editorial-link group cursor-pointer font-display font-medium text-2xl text-text-secondary"
+            >
+              <span>
+                <span className="serif-italic">ou</span> nouvelle partie
+              </span>
+              <span className="arrow text-text-secondary text-3xl leading-none">→</span>
+            </button>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-text-tertiary">
+              Tout{' '}
+              <span className="serif-italic normal-case tracking-normal text-text-secondary">
+                recommencer
+              </span>
+            </p>
+          </div>
         </motion.div>
       </motion.div>
     </motion.main>

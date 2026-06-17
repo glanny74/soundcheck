@@ -190,11 +190,11 @@ export default function PlayerSetup({ onValidate, onBack }) {
               </motion.p>
             )}
 
-            {/* CTA en bas à droite, style lien */}
+            {/* CTA en bas à droite, style lien primary (underline persistant) */}
             <motion.div variants={fadeUpChild} className="flex justify-end pt-4">
               <button
                 type="submit"
-                className="editorial-link group cursor-pointer font-display font-medium text-2xl text-text-primary"
+                className="editorial-link-primary group cursor-pointer font-display font-medium text-2xl text-text-primary"
               >
                 <span>Continuer</span>
                 <span className="arrow text-accent-purple text-3xl leading-none">→</span>
@@ -240,22 +240,29 @@ function StepIndicator({ current, total }) {
   )
 }
 
-/* ----- Stepper horizontal avec graduation : 1 — 2 — 3 — 4 — 5 ----- */
+/* ----- Stepper horizontal : 1 — 2 — 3 — 4 — 5 -----
+   Refonte tactile : chaque point est un cercle de 48-56px avec le chiffre au
+   centre (au lieu d'en-dessous). On gagne en lisibilité ET en zone de clic
+   (norme tactile Apple/Material : >= 44x44px). La ligne de fond passe DERRIÈRE
+   les cercles via un translateY au lieu d'être centrée sur eux. */
 function PlayerCountStepper({ value, onChange, max }) {
   return (
-    <div className="relative">
-      {/* Ligne horizontale de fond */}
-      <div className="absolute top-1/2 left-0 right-0 h-px bg-white/10 -translate-y-1/2" />
+    <div className="relative py-2">
+      {/* Ligne horizontale de fond — positionnée au centre vertical des cercles.
+          On laisse de la marge horizontale pour qu'elle ne dépasse pas
+          des points extrêmes. */}
+      <div className="absolute top-1/2 left-[24px] right-[24px] h-px bg-white/10 -translate-y-1/2" />
 
       {/* Ligne de progression jusqu'à la valeur actuelle */}
       <motion.div
-        className="absolute top-1/2 left-0 h-px bg-accent-purple -translate-y-1/2 origin-left"
+        className="absolute top-1/2 left-[24px] h-px bg-accent-purple -translate-y-1/2 origin-left"
         animate={{ scaleX: (value - 1) / (max - 1) }}
         transition={{ duration: 0.5, ease: EASE_OUT }}
-        style={{ width: '100%' }}
+        style={{ width: 'calc(100% - 48px)' }}
       />
 
-      {/* Points cliquables */}
+      {/* Points cliquables — chiffre AU CENTRE, taille suffisante pour
+          être touché confortablement au pouce. */}
       <div className="relative flex justify-between items-center">
         {Array.from({ length: max }).map((_, i) => {
           const n = i + 1
@@ -266,11 +273,14 @@ function PlayerCountStepper({ value, onChange, max }) {
               key={n}
               type="button"
               onClick={() => onChange(n)}
-              className="relative flex flex-col items-center gap-3 group cursor-pointer"
+              aria-label={`${n} joueur${n > 1 ? 's' : ''}`}
+              className="relative flex items-center justify-center group cursor-pointer
+                         w-12 h-12 sm:w-14 sm:h-14 rounded-full touch-manipulation"
             >
+              {/* Cercle de fond animé */}
               <motion.span
                 animate={{
-                  scale: active ? 1.2 : 1,
+                  scale: active ? 1 : 0.85,
                   backgroundColor: passed
                     ? 'var(--color-accent-purple)'
                     : 'var(--color-bg-elevated)',
@@ -280,15 +290,18 @@ function PlayerCountStepper({ value, onChange, max }) {
                 }}
                 transition={{ duration: 0.4, ease: EASE_OUT }}
                 className={`
-                  block w-5 h-5 rounded-full border-2
+                  absolute inset-0 rounded-full border-2
                   ${active ? 'ring-4 ring-accent-purple/30' : ''}
-                  group-hover:scale-110 transition-transform
+                  group-hover:scale-105 transition-transform
                 `}
+                aria-hidden="true"
               />
+              {/* Chiffre au centre */}
               <span
                 className={`
-                  font-display font-bold text-lg tabular-nums transition-colors
-                  ${active ? 'text-text-primary' : 'text-text-tertiary'}
+                  relative font-display font-bold text-base sm:text-lg tabular-nums
+                  transition-colors
+                  ${passed ? 'text-white' : 'text-text-tertiary group-hover:text-text-secondary'}
                 `}
               >
                 {n}
@@ -297,6 +310,17 @@ function PlayerCountStepper({ value, onChange, max }) {
           )
         })}
       </div>
+
+      {/* Helper texte : récap du choix en cours */}
+      <p className="mt-4 text-[10px] uppercase tracking-[0.3em] text-text-tertiary">
+        <span className="serif-italic normal-case tracking-normal text-accent-purple">
+          {value}
+        </span>{' '}
+        joueur{value > 1 ? 's' : ''}{' '}
+        <span className="serif-italic normal-case tracking-normal text-text-tertiary">
+          sélectionné{value > 1 ? 's' : ''}
+        </span>
+      </p>
     </div>
   )
 }

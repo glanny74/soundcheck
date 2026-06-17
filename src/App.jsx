@@ -1,13 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
-import { signOutUser } from './firebase/auth'
+import { signOutUser } from './supabase/auth'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Welcome from './components/auth/Welcome'
 import Login from './components/auth/Login'
 import Register from './components/auth/Register'
 import ForgotPassword from './components/auth/ForgotPassword'
-import EmailVerificationBanner from './components/auth/EmailVerificationBanner'
-import VerifyEmail from './components/auth/VerifyEmail'
 import Home from './components/Home'
 import PlayerSetup from './components/PlayerSetup'
 import ModeSelect from './components/ModeSelect'
@@ -15,7 +13,6 @@ import Game from './components/Game'
 import Results from './components/Results'
 import Profile from './components/profile/Profile'
 import History from './components/profile/History'
-import Leaderboard from './components/leaderboard/Leaderboard'
 
 /*
   Composant racine — orchestre toute l'application.
@@ -23,12 +20,15 @@ import Leaderboard from './components/leaderboard/Leaderboard'
   Architecture :
    - <AuthProvider> wrappe l'app pour exposer l'état d'authentification
    - <AppContent> est le routeur interne qui choisit l'écran à afficher
-     selon l'état d'auth et la navigation
 
-  Trois "zones" d'écrans :
+  Deux « zones » d'écrans :
    - Zone AUTH (welcome, login, register, forgot) → si user non connecté ET pas invité
-   - Zone JEU  (home, player_setup, mode_select, game, results) → connecté OU invité
-   - Plus tard : zone PROFIL (profile, history, leaderboard) — étape 3+
+   - Zone JEU/PROFIL (home, game, profile...) → connecté OU invité
+
+  Note migration Supabase : la confirmation d'email est native. Cliquer le lien
+  du mail ramène sur l'app et le client supabase-js ouvre la session tout seul.
+  Plus besoin d'écran /verify ni de bannière « vérifie ton email » (un compte
+  connecté est forcément confirmé).
 */
 
 const SCREENS = {
@@ -36,7 +36,6 @@ const SCREENS = {
   LOGIN: 'login',
   REGISTER: 'register',
   FORGOT: 'forgot',
-  VERIFY: 'verify',
   HOME: 'home',
   PLAYER_SETUP: 'player_setup',
   MODE_SELECT: 'mode_select',
@@ -44,34 +43,9 @@ const SCREENS = {
   RESULTS: 'results',
   PROFILE: 'profile',
   HISTORY: 'history',
-  LEADERBOARD: 'leaderboard',
 }
 
 const AUTH_SCREENS = [SCREENS.WELCOME, SCREENS.LOGIN, SCREENS.REGISTER, SCREENS.FORGOT]
-
-/*
-  Lit l'URL au démarrage de l'app pour détecter un atterrissage depuis un lien
-  Firebase (verifyEmail, resetPassword, etc.). Si le mode est `verifyEmail`,
-  on extrait le oobCode pour le passer à l'écran VerifyEmail.
-
-  On nettoie ensuite l'URL via history.replaceState pour éviter que rafraîchir
-  la page relance la vérification (qui échouerait car le code est usage-unique).
-*/
-function detectFirebaseAction() {
-  if (typeof window === 'undefined') return null
-  const params = new URLSearchParams(window.location.search)
-  const mode = params.get('mode')
-  const oobCode = params.get('oobCode')
-  if (mode === 'verifyEmail' && oobCode) {
-    return { type: 'verifyEmail', oobCode }
-  }
-  return null
-}
-
-function clearActionParamsFromUrl() {
-  if (typeof window === 'undefined') return
-  window.history.replaceState({}, '', window.location.pathname)
-}
 
 export default function App() {
   return (
@@ -84,79 +58,32 @@ export default function App() {
 function AppContent() {
   const { user, loading } = useAuth()
 
-  // Détection synchrone de l'URL au tout premier render — comme ça si on
-  // arrive depuis le lien du mail, on commence direct sur l'écran VERIFY au
-  // lieu de flasher WELCOME une fraction de seconde.
-  const initialAction = detectFirebaseAction()
-
   // Mode invité : true = l'utilisateur a explicitement choisi de jouer sans compte
   const [isGuest, setIsGuest] = useState(false)
 
   // Écran actuellement affiché
-  const [currentScreen, setCurrentScreen] = useState(
-    initialAction?.type === 'verifyEmail' ? SCREENS.VERIFY : SCREENS.WELCOME
-  )
-
-  // Code de vérification stocké au premier render, puis nettoyé de l'URL.
-  // Si on rafraîchit la page, on n'aura plus le code (cleanup volontaire).
-  const [verifyOobCode, setVerifyOobCode] = useState(
-    initialAction?.type === 'verifyEmail' ? initialAction.oobCode : null
-  )
-
-  // Nettoyage de l'URL au montage si on a détecté une action Firebase
-  useEffect(() => {
-    if (initialAction) {
-      clearActionParamsFromUrl()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const [currentScreen, setCurrentScreen] = useState(SCREENS.WELCOME)
 
   const [players, setPlayers] = useState([])
   const [gameConfig, setGameConfig] = useState(null)
 
-  // Quand l'utilisateur vient de se connecter (depuis Login ou Register),
-  // on le pousse automatiquement sur Home. On NE pousse PAS s'il est sur
-  // l'écran VERIFY (la redirection est gérée par VerifyEmail lui-même).
+  // Quand l'utilisateur vient de se connecter (Login/Register/Google, ou
+  // retour d'un lien de confirmation email), on le pousse sur Home.
   useEffect(() => {
-    if (
-      user &&
-      AUTH_SCREENS.includes(currentScreen) &&
-      currentScreen !== SCREENS.VERIFY
-    ) {
+    if (user && AUTH_SCREENS.includes(currentScreen)) {
       setCurrentScreen(SCREENS.HOME)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   // Quand l'utilisateur se déconnecte (et n'est pas invité), retour à Welcome.
-  // Sauf sur l'écran VERIFY où on laisse l'utilisateur finir sa vérif.
   useEffect(() => {
-    if (
-      !user &&
-      !isGuest &&
-      !AUTH_SCREENS.includes(currentScreen) &&
-      currentScreen !== SCREENS.VERIFY
-    ) {
+    if (!user && !isGuest && !AUTH_SCREENS.includes(currentScreen)) {
       setCurrentScreen(SCREENS.WELCOME)
       setPlayers([])
       setGameConfig(null)
     }
   }, [user, isGuest, currentScreen])
-
-  // ---------- handlers de l'écran VERIFY ----------
-
-  // Vérification réussie : on redirige vers Home si l'utilisateur est connecté
-  // dans ce navigateur, sinon vers Login (il faudra qu'il se reconnecte).
-  function handleVerifySuccess() {
-    setVerifyOobCode(null)
-    setCurrentScreen(user ? SCREENS.HOME : SCREENS.LOGIN)
-  }
-
-  // Erreur de vérification : on l'envoie à un endroit sensé selon l'état d'auth.
-  function handleVerifyError() {
-    setVerifyOobCode(null)
-    setCurrentScreen(user ? SCREENS.HOME : SCREENS.WELCOME)
-  }
 
   // ---------- handlers de navigation ----------
 
@@ -171,7 +98,7 @@ function AppContent() {
     setCurrentScreen(SCREENS.HOME)
   }
 
-  // Déconnexion : signOut Firebase OU sortie du mode invité
+  // Déconnexion : signOut Supabase OU sortie du mode invité
   const handleLogout = async () => {
     if (isGuest) {
       setIsGuest(false)
@@ -180,11 +107,11 @@ function AppContent() {
       setCurrentScreen(SCREENS.WELCOME)
     } else {
       await signOutUser()
-      // Le useEffect ci-dessus se chargera de bascule sur Welcome
+      // Le useEffect ci-dessus bascule sur Welcome quand user passe à null
     }
   }
 
-  // Flux jeu (inchangé V2)
+  // Flux jeu (inchangé)
   const goToPlayerSetup = () => setCurrentScreen(SCREENS.PLAYER_SETUP)
 
   const handlePlayersReady = (newPlayers) => {
@@ -216,7 +143,6 @@ function AppContent() {
   // Navigation vers les écrans utilisateur (depuis Home → UserMenu)
   const goToProfile = () => setCurrentScreen(SCREENS.PROFILE)
   const goToHistory = () => setCurrentScreen(SCREENS.HISTORY)
-  const goToLeaderboard = () => setCurrentScreen(SCREENS.LEADERBOARD)
   const backToHome = () => setCurrentScreen(SCREENS.HOME)
 
   // ---------- rendu ----------
@@ -224,22 +150,9 @@ function AppContent() {
   // Pendant la vérification initiale de la session
   if (loading) return <LoadingScreen />
 
-  // Bannière de vérification d'email : visible si l'utilisateur est inscrit
-  // par email/password (pas Google) ET que son adresse n'est pas encore
-  // confirmée. On la cache sur les écrans d'auth et sur l'écran VERIFY pour
-  // éviter l'overlap visuel.
-  const isPasswordProvider =
-    user?.providerData?.[0]?.providerId === 'password'
-  const showVerificationBanner =
-    user && !user.emailVerified && isPasswordProvider &&
-    !AUTH_SCREENS.includes(currentScreen) &&
-    currentScreen !== SCREENS.VERIFY
-
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary">
       <div className="grain-overlay" aria-hidden="true" />
-
-      {showVerificationBanner && <EmailVerificationBanner />}
 
       <AnimatePresence mode="wait">
         {/* === Zone AUTH === */}
@@ -273,16 +186,6 @@ function AppContent() {
           <ForgotPassword key="forgot" onBack={goToLogin} />
         )}
 
-        {/* === Zone VERIFY === */}
-        {currentScreen === SCREENS.VERIFY && (
-          <VerifyEmail
-            key="verify"
-            oobCode={verifyOobCode}
-            onSuccess={handleVerifySuccess}
-            onError={handleVerifyError}
-          />
-        )}
-
         {/* === Zone JEU === */}
         {currentScreen === SCREENS.HOME && (user || isGuest) && (
           <Home
@@ -291,22 +194,21 @@ function AppContent() {
             onLogout={handleLogout}
             onProfile={goToProfile}
             onHistory={goToHistory}
-            onLeaderboard={goToLeaderboard}
             isGuest={isGuest}
           />
         )}
 
         {/* Écrans utilisateur — réservés aux utilisateurs connectés */}
         {currentScreen === SCREENS.PROFILE && user && (
-          <Profile key="profile" onBack={backToHome} />
+          <Profile
+            key="profile"
+            onBack={backToHome}
+            onStart={goToPlayerSetup}
+          />
         )}
 
         {currentScreen === SCREENS.HISTORY && user && (
           <History key="history" onBack={backToHome} />
-        )}
-
-        {currentScreen === SCREENS.LEADERBOARD && user && (
-          <Leaderboard key="leaderboard" onBack={backToHome} />
         )}
 
         {currentScreen === SCREENS.PLAYER_SETUP && (
