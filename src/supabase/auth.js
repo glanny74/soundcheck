@@ -104,13 +104,24 @@ export async function resendConfirmationEmail(email) {
 
 /**
  * Envoi d'un email de réinitialisation de mot de passe.
- * Le lien renvoie sur l'app avec une session de récupération.
- * NOTE (limitation connue) : l'écran qui permet de SAISIR le nouveau mot de
- * passe (supabase.auth.updateUser) reste à implémenter — voir suivi migration.
+ * Le lien renvoie sur l'app avec une session de récupération : au retour,
+ * supabase-js émet l'événement `PASSWORD_RECOVERY` (capté dans AuthContext),
+ * ce qui déclenche l'affichage de l'écran de saisie du nouveau mot de passe.
  */
 export async function resetPassword(email) {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: window.location.origin,
   })
+  if (error) throw error
+}
+
+/**
+ * Définit un nouveau mot de passe pour l'utilisateur courant.
+ * Appelée depuis l'écran ResetPassword, une fois que l'utilisateur est arrivé
+ * via le lien de récupération (il a alors une session valide qui autorise
+ * updateUser). Min 6 caractères, exigé par Supabase.
+ */
+export async function updatePassword(newPassword) {
+  const { error } = await supabase.auth.updateUser({ password: newPassword })
   if (error) throw error
 }

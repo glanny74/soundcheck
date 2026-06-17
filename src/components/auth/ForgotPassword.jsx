@@ -9,9 +9,9 @@ import AuthLayout from './AuthLayout'
   Pour éviter de divulguer si un email existe ou non en BDD, on affiche
   toujours un message générique de succès après l'envoi.
 
-  Limitation connue (suivi migration) : le lien reçu ouvre une session de
-  récupération mais l'écran de SAISIE du nouveau mot de passe
-  (supabase.auth.updateUser) n'est pas encore implémenté.
+  Suite du parcours : le lien reçu ouvre une session de récupération ; au
+  retour sur l'app, AuthContext capte l'événement PASSWORD_RECOVERY et affiche
+  l'écran ResetPassword (saisie du nouveau mot de passe via updateUser).
 */
 
 export default function ForgotPassword({ onBack }) {

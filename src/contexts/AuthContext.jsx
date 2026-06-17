@@ -25,6 +25,9 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  // true quand l'utilisateur arrive depuis un lien « mot de passe oublié » :
+  // on doit alors lui afficher l'écran de saisie d'un nouveau mot de passe.
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
 
   // 1) Détermination de la session : une lecture initiale + un abonnement aux
   //    changements (login, logout, retour de lien email/OAuth, refresh token).
@@ -43,8 +46,13 @@ export function AuthProvider({ children }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
+      // Retour depuis un lien de réinitialisation : Supabase émet cet événement.
+      // On lève le drapeau pour que App affiche l'écran « nouveau mot de passe ».
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true)
+      }
     })
 
     return () => {
@@ -88,6 +96,9 @@ export function AuthProvider({ children }) {
     loading,
     isAuthenticated: !!user,
     refreshProfile,
+    passwordRecovery,
+    // Appelé par l'écran ResetPassword une fois le mot de passe changé.
+    clearPasswordRecovery: () => setPasswordRecovery(false),
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

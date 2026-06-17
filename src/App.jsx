@@ -6,6 +6,7 @@ import Welcome from './components/auth/Welcome'
 import Login from './components/auth/Login'
 import Register from './components/auth/Register'
 import ForgotPassword from './components/auth/ForgotPassword'
+import ResetPassword from './components/auth/ResetPassword'
 import Home from './components/Home'
 import PlayerSetup from './components/PlayerSetup'
 import ModeSelect from './components/ModeSelect'
@@ -56,7 +57,7 @@ export default function App() {
 }
 
 function AppContent() {
-  const { user, loading } = useAuth()
+  const { user, loading, passwordRecovery, clearPasswordRecovery } = useAuth()
 
   // Mode invité : true = l'utilisateur a explicitement choisi de jouer sans compte
   const [isGuest, setIsGuest] = useState(false)
@@ -149,6 +150,24 @@ function AppContent() {
 
   // Pendant la vérification initiale de la session
   if (loading) return <LoadingScreen />
+
+  // Mode « réinitialisation du mot de passe » : l'utilisateur vient de cliquer
+  // le lien du mail. Cet écran prend la priorité sur toute autre navigation.
+  // Une fois terminé, on referme le mode récupération et on file sur Home
+  // (l'utilisateur est déjà connecté grâce à la session de récupération).
+  if (passwordRecovery) {
+    return (
+      <div className="min-h-screen bg-bg-primary text-text-primary">
+        <div className="grain-overlay" aria-hidden="true" />
+        <ResetPassword
+          onDone={() => {
+            clearPasswordRecovery()
+            setCurrentScreen(SCREENS.HOME)
+          }}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary">
