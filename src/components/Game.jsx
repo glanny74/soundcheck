@@ -8,6 +8,7 @@ import {
   getRandomTracks,
   getTracksByGenre,
 } from '../services/deezerApi'
+import { getAnimeOpenings } from '../services/animeThemesApi'
 import { buildQuestion, formatLabel } from '../utils/gameLogic'
 import { EASE_OUT, pageTransition } from '../utils/motion'
 import { playCorrect, playTick, playWrong } from '../utils/sounds'
@@ -45,6 +46,36 @@ const QUESTION_TIME_S = QUESTION_TIME_MS / 1000
 const POINTS_PER_CORRECT = 10
 const BAR_COUNT = 7
 
+/*
+  Précharge un fichier audio et résout la promesse quand il est prêt à jouer
+  (événement canplaythrough), ou après un délai max (pour ne pas bloquer
+  indéfiniment le lancement si le réseau est lent). Sert à charger le 1er
+  extrait pendant l'écran "création de la playlist" : ainsi la 1re manche
+  démarre aussi vite que les suivantes (qui, elles, sont préchargées pendant
+  la manche précédente).
+*/
+function preloadAudio(src, maxWaitMs = 5000) {
+  return new Promise((resolve) => {
+    if (!src) return resolve()
+    const audio = new Audio()
+    audio.preload = 'auto'
+    let settled = false
+    const done = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      audio.removeEventListener('canplaythrough', done)
+      audio.removeEventListener('error', done)
+      resolve()
+    }
+    const timer = setTimeout(done, maxWaitMs)
+    audio.addEventListener('canplaythrough', done)
+    audio.addEventListener('error', done)
+    audio.src = src
+    audio.load()
+  })
+}
+
 export default function Game({ players, config, onFinish }) {
   // user : utilisé en fin de partie pour décider si on sauvegarde (connecté).
   // Si non connecté (invité) → on bypass simplement la sauvegarde.
@@ -54,8 +85,10 @@ export default function Game({ players, config, onFinish }) {
   const [phase, setPhase] = useState('loading')
   const [errorMsg, setErrorMsg] = useState('')
 
-  const [pool, setPool] = useState([])
-  const [usedIds, setUsedIds] = useState([])
+  // Toutes les questions de la partie, pré-générées au chargement du pool.
+  // Les pré-générer permet de connaître l'extrait de la manche SUIVANTE et
+  // donc de le précharger pendant que la manche en cours se joue.
+  const [questions, setQuestions] = useState([])
 
   const [roundIndex, setRoundIndex] = useState(0)
   const [question, setQuestion] = useState(null)
@@ -97,6 +130,15 @@ export default function Game({ players, config, onFinish }) {
   const sampleTimerRef = useRef(null)
   const questionTimerRef = useRef(null)
   const tickTimerRef = useRef(null)
+  // Filet de sécurité si l'audio ne démarre jamais (erreur/format non supporté)
+  const bufferFallbackRef = useRef(null)
+  // Intervalle du fondu d'entrée (masque le "pop" du décodeur au démarrage)
+  const fadeRef = useRef(null)
+  // Élément <audio> caché qui précharge l'extrait de la manche suivante.
+  const prefetchRef = useRef(null)
+  // Garde l'unicité du démarrage des chronos (entre l'événement "playing" et
+  // le filet de sécurité, on ne veut démarrer qu'une seule fois).
+  const timersStartedRef = useRef(false)
 
   // Timestamp de démarrage de la partie — utilisé pour calculer la durée
   // en fin de partie (pour les stats Firestore).
@@ -119,6 +161,12 @@ export default function Game({ players, config, onFinish }) {
           tracks = await getTracksByGenre(config.genre, config.language)
         } else if (config.mode === 'random') {
           tracks = await getRandomTracks()
+        } else if (config.mode === 'otaku') {
+          // Mode Otaku : openings d'anime (on devine l'anime). Les objets
+          // renvoyés ont le même format qu'un titre Deezer (title = nom de
+          // l'anime), donc tout le reste du flux fonctionne tel quel.
+          // La difficulté choisit la taille/obscurité du réservoir d'animes.
+          tracks = await getAnimeOpenings(config.difficulty)
         }
 
         const uniqueById = Array.from(
@@ -135,7 +183,32 @@ export default function Game({ players, config, onFinish }) {
           return
         }
 
-        setPool(uniqueById)
+        // Pré-génération de TOUTES les questions de la partie. On accumule les
+        // ids déjà utilisés pour ne pas tirer 2x le même extrait, et on s'arrête
+        // si le pool est épuisé (partie alors plus courte que prévu).
+        const built = []
+        const used = []
+        for (let i = 0; i < config.totalRounds; i++) {
+          const q = buildQuestion(uniqueById, used)
+          if (!q) break
+          built.push(q)
+          used.push(q.correct.id)
+        }
+
+        if (built.length === 0) {
+          setErrorMsg('Impossible de générer des questions pour cette partie.')
+          setPhase('error')
+          return
+        }
+
+        setQuestions(built)
+
+        // On précharge le 1er extrait PENDANT l'écran de chargement, pour que
+        // la 1re manche démarre sans attente (les manches suivantes, elles,
+        // sont préchargées pendant la manche précédente).
+        await preloadAudio(built[0]?.correct?.preview)
+        if (cancelled) return
+
         setPhase('ready')
       } catch (err) {
         console.error(err)
@@ -153,11 +226,13 @@ export default function Game({ players, config, onFinish }) {
   }, [config])
 
   // -------------------------------------------------------------------------
-  // 2) Génération de la question dès qu'on entre en phase "ready"
+  // 2) Mise en place de la question de la manche courante (depuis la liste
+  //    pré-générée) dès qu'on entre en phase "ready". Si on a épuisé les
+  //    questions, la partie se termine.
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (phase !== 'ready' || pool.length === 0) return
-    const q = buildQuestion(pool, usedIds)
+    if (phase !== 'ready') return
+    const q = questions[roundIndex]
     if (!q) {
       finishGame(scoreboard)
       return
@@ -168,7 +243,7 @@ export default function Game({ players, config, onFinish }) {
     setTimeLeft(QUESTION_TIME_S)
     setLastResult(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, pool])
+  }, [phase, roundIndex, questions])
 
   // -------------------------------------------------------------------------
   // 3) Gestion clavier — touches 1-4 (réponse) en playing, 1-5 (joueur) en
@@ -226,6 +301,8 @@ export default function Game({ players, config, onFinish }) {
       clearTimeout(sampleTimerRef.current)
       clearTimeout(questionTimerRef.current)
       clearInterval(tickTimerRef.current)
+      clearTimeout(bufferFallbackRef.current)
+      clearInterval(fadeRef.current)
       if (audioRef.current) audioRef.current.pause()
     }
   }, [])
@@ -234,16 +311,57 @@ export default function Game({ players, config, onFinish }) {
   // ACTIONS
   // =========================================================================
 
+  // Clic sur play : on entre en phase "buffering" pendant que l'audio se
+  // charge. Les chronos (extrait 8s + question 15s) NE démarrent PAS ici :
+  // ils ne se lancent qu'au moment où le son sort réellement (handleAudioStarted),
+  // pour ne pas rogner l'extrait avec le temps de chargement réseau.
   function startSample() {
     const audio = audioRef.current
     if (!audio) return
+
+    timersStartedRef.current = false
+    // Lecture depuis le début : cette portion est déjà préchargée
+    // (preload="auto"), donc le démarrage est rapide.
     audio.currentTime = 0
+    // On démarre à volume 0 : les tout premiers échantillons (où se loge le
+    // "pop" du décodeur) sont ainsi silencieux. On remontera le volume en
+    // fondu dès que la lecture commence vraiment (beginPlayingTimers).
+    clearInterval(fadeRef.current)
+    audio.volume = 0
+    setPhase('buffering')
     audio.play().catch((err) => console.warn('Lecture audio refusée :', err))
 
+    // Filet de sécurité : si la lecture ne démarre jamais (audio en erreur...),
+    // on démarre quand même au bout d'un délai pour ne pas bloquer la partie.
+    clearTimeout(bufferFallbackRef.current)
+    bufferFallbackRef.current = setTimeout(() => beginPlayingTimers(), 6000)
+  }
+
+  // Démarre les chronos quand la lecture commence VRAIMENT. Idempotent :
+  // appelé soit par l'événement "playing" de l'audio, soit par le filet de
+  // sécurité — on ne démarre qu'une seule fois.
+  function beginPlayingTimers() {
+    if (timersStartedRef.current) return
+    timersStartedRef.current = true
+
+    clearTimeout(bufferFallbackRef.current)
     setPhase('playing')
 
+    // Fondu d'entrée ~150 ms : volume 0 → 1 par paliers, pour masquer le
+    // "pop"/craquement de démarrage du décodeur audio.
+    const audio = audioRef.current
+    if (audio) {
+      let v = 0
+      clearInterval(fadeRef.current)
+      fadeRef.current = setInterval(() => {
+        v = Math.min(1, v + 0.1)
+        audio.volume = v
+        if (v >= 1) clearInterval(fadeRef.current)
+      }, 15)
+    }
+
     sampleTimerRef.current = setTimeout(() => {
-      if (audio) audio.pause()
+      if (audioRef.current) audioRef.current.pause()
     }, SAMPLE_DURATION_MS)
 
     questionTimerRef.current = setTimeout(() => {
@@ -251,10 +369,17 @@ export default function Game({ players, config, onFinish }) {
     }, QUESTION_TIME_MS)
   }
 
+  // Handler de l'événement "playing" de la balise <audio> : le son sort.
+  function handleAudioStarted() {
+    if (phase === 'buffering') beginPlayingTimers()
+  }
+
   function clearAllTimers() {
     clearTimeout(sampleTimerRef.current)
     clearTimeout(questionTimerRef.current)
     clearInterval(tickTimerRef.current)
+    clearTimeout(bufferFallbackRef.current)
+    clearInterval(fadeRef.current)
   }
 
   // Phase 1 → 2 : on a cliqué sur une proposition. On stoppe l'audio,
@@ -307,9 +432,6 @@ export default function Game({ players, config, onFinish }) {
   function revealQuestion() {
     clearAllTimers()
     if (audioRef.current) audioRef.current.pause()
-    if (question) {
-      setUsedIds((prev) => [...prev, question.correct.id])
-    }
     setPhase('reveal')
   }
 
@@ -350,6 +472,7 @@ export default function Game({ players, config, onFinish }) {
             artists: config.artists?.map((a) => a.name) || null,
             genre: config.genre || null,
             language: config.language || null,
+            difficulty: config.difficulty || null,
           },
           rounds: config.totalRounds,
           players: finalPlayers.map((p, i) => ({
@@ -418,7 +541,30 @@ export default function Game({ players, config, onFinish }) {
           ne renvoient pas les bons en-têtes CORS et l'audio se bloque sinon.
           Conséquence : le vrai visualiseur AnalyserNode ne marche pas, on
           a remplacé par des barres animées CSS purement décoratives. */}
-      <audio ref={audioRef} src={question.correct.preview} preload="auto" />
+      <audio
+        ref={audioRef}
+        src={question.correct.preview}
+        preload="auto"
+        onPlaying={handleAudioStarted}
+        onError={() => {
+          // Audio indisponible (404, format non supporté...) : on ne bloque
+          // pas la manche, le filet de sécurité démarrera les chronos.
+          console.warn('Audio indisponible pour cette manche.')
+        }}
+      />
+
+      {/* Préchargement silencieux de l'extrait de la manche SUIVANTE : pendant
+          que la manche en cours se joue, le navigateur télécharge déjà le
+          prochain fichier (les OGG d'anime font ~3-4 Mo). Au passage à la
+          manche d'après, l'audio est alors servi depuis le cache → démarrage
+          instantané. On ne lit jamais cet élément, on s'en sert juste pour
+          déclencher le téléchargement (preload). */}
+      <audio
+        ref={prefetchRef}
+        src={questions[roundIndex + 1]?.correct?.preview || undefined}
+        preload="auto"
+        muted
+      />
 
       {/* === Backdrop pochette floutée === */}
       <AnimatePresence mode="wait">
@@ -483,7 +629,7 @@ export default function Game({ players, config, onFinish }) {
           {/* Zone centrale variable */}
           <div className="min-h-[180px] sm:min-h-[220px] flex items-center justify-center">
             <AnimatePresence mode="wait">
-              {phase === 'ready' && (
+              {(phase === 'ready' || phase === 'buffering') && (
                 <motion.div
                   key="ready"
                   initial={{ opacity: 0, scale: 0.9 }}
@@ -492,9 +638,12 @@ export default function Game({ players, config, onFinish }) {
                   transition={{ duration: 0.5, ease: EASE_OUT }}
                   className="flex flex-col items-center"
                 >
-                  <PlayButton onClick={startSample} />
+                  <PlayButton
+                    onClick={startSample}
+                    loading={phase === 'buffering'}
+                  />
                   <p className="mt-6 text-xs uppercase tracking-[0.3em] text-text-tertiary">
-                    Tap to play
+                    {phase === 'buffering' ? 'Chargement…' : 'Tap to play'}
                   </p>
                 </motion.div>
               )}
@@ -582,6 +731,10 @@ export default function Game({ players, config, onFinish }) {
                   key={track.id + '-' + i}
                   index={i + 1}
                   track={track}
+                  // En mode Otaku, on cache le titre de la chanson dans les
+                  // propositions : on ne montre que le nom de l'anime (sinon on
+                  // donnerait un indice trop fort). La chanson est révélée après.
+                  hideSubtitle={config.mode === 'otaku'}
                   onClick={() => handleAnswerSelect(track)}
                 />
               ))}
@@ -760,23 +913,35 @@ function CircularTimer({ seconds, total, danger, showVisualizer, frozen = false 
 }
 
 /* ----- Gros disque play central ----- */
-function PlayButton({ onClick }) {
+function PlayButton({ onClick, loading = false }) {
   return (
     <button
       onClick={onClick}
-      className="w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-accent-green text-black
-                 flex items-center justify-center cursor-pointer
-                 hover:scale-105 hover:bg-accent-green-hover transition-all duration-300
-                 shadow-2xl shadow-accent-green/40
-                 animate-pulse-glow"
-      aria-label="Lancer l'extrait"
+      disabled={loading}
+      className={`w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-accent-green text-black
+                 flex items-center justify-center
+                 transition-all duration-300 shadow-2xl shadow-accent-green/40
+                 ${
+                   loading
+                     ? 'cursor-wait opacity-90'
+                     : 'cursor-pointer hover:scale-105 hover:bg-accent-green-hover animate-pulse-glow'
+                 }`}
+      aria-label={loading ? 'Chargement de l\'extrait' : 'Lancer l\'extrait'}
     >
-      <span
-        className="ml-2 sm:ml-3 block w-0 h-0
-                   border-t-[22px] sm:border-t-[26px] border-t-transparent
-                   border-b-[22px] sm:border-b-[26px] border-b-transparent
-                   border-l-[34px] sm:border-l-[40px] border-l-black"
-      />
+      {loading ? (
+        // Spinner : anneau noir qui tourne, le temps que l'audio se charge.
+        <span
+          className="block w-10 h-10 sm:w-12 sm:h-12 rounded-full border-4 border-black/25 border-t-black animate-spin"
+          aria-hidden="true"
+        />
+      ) : (
+        <span
+          className="ml-2 sm:ml-3 block w-0 h-0
+                     border-t-[22px] sm:border-t-[26px] border-t-transparent
+                     border-b-[22px] sm:border-b-[26px] border-b-transparent
+                     border-l-[34px] sm:border-l-[40px] border-l-black"
+        />
+      )}
     </button>
   )
 }
@@ -845,7 +1010,7 @@ function RevealLayout({ track, result, attributedPlayer }) {
 }
 
 /* ----- Carte QCM editorial : numéro Instrument Serif en fond + titre + artiste ----- */
-function ChoiceCard({ index, track, onClick }) {
+function ChoiceCard({ index, track, onClick, hideSubtitle = false }) {
   return (
     <button
       onClick={onClick}
@@ -885,9 +1050,11 @@ function ChoiceCard({ index, track, onClick }) {
       <p className="relative font-display font-semibold text-base sm:text-lg text-text-primary leading-tight break-words">
         {track.title}
       </p>
-      <p className="relative text-sm text-text-secondary mt-1 truncate">
-        {track.artist.name}
-      </p>
+      {!hideSubtitle && (
+        <p className="relative text-sm text-text-secondary mt-1 truncate">
+          {track.artist.name}
+        </p>
+      )}
     </button>
   )
 }

@@ -72,9 +72,35 @@ const MODES = [
     border: 'border-accent-green',
     text: 'text-accent-green',
   },
+  {
+    id: 'otaku',
+    number: '05',
+    label: 'Otaku',
+    description: 'Openings d\'anime — devine la série.',
+    accent: 'otaku',
+    bg: 'bg-accent-otaku/10',
+    hoverBg: 'hover:bg-accent-otaku/15',
+    border: 'border-accent-otaku',
+    text: 'text-accent-otaku',
+  },
 ]
 
 const ROUNDS_OPTIONS = [5, 10, 15]
+
+// Niveaux de difficulté du mode Otaku (réservoir d'animes de plus en plus large).
+const OTAKU_DIFFICULTIES = [
+  { id: 'easy', label: 'Facile', hint: 'Les animes les plus connus de tous.' },
+  {
+    id: 'medium',
+    label: 'Intermédiaire',
+    hint: 'Élargi à beaucoup d\'animes populaires.',
+  },
+  {
+    id: 'hard',
+    label: 'Difficile',
+    hint: 'Tout le catalogue — y compris des animes obscurs. Pour les vrais otakus.',
+  },
+]
 
 export default function ModeSelect({ onStart, onBack }) {
   const [mode, setMode] = useState(null)
@@ -87,6 +113,8 @@ export default function ModeSelect({ onStart, onBack }) {
   const [selectedArtists, setSelectedArtists] = useState([])
   const [selectedGenre, setSelectedGenre] = useState(null)
   const [selectedLanguage, setSelectedLanguage] = useState('all')
+  // Difficulté du mode Otaku (taille/obscurité du réservoir d'animes).
+  const [selectedDifficulty, setSelectedDifficulty] = useState('easy')
 
   const [error, setError] = useState('')
 
@@ -142,6 +170,7 @@ export default function ModeSelect({ onStart, onBack }) {
     setSelectedArtists([])
     setSelectedGenre(null)
     setSelectedLanguage('all')
+    setSelectedDifficulty('easy')
     setError('')
   }
 
@@ -186,6 +215,7 @@ export default function ModeSelect({ onStart, onBack }) {
       artists: selectedArtists,
       genre: selectedGenre,
       language: selectedLanguage,
+      difficulty: selectedDifficulty,
     })
   }
 
@@ -291,13 +321,24 @@ export default function ModeSelect({ onStart, onBack }) {
           numberSize="text-[110px] sm:text-[180px]"
         />
 
-        {/* Aléatoire : pleine largeur en bas */}
+        {/* Aléatoire : demi-largeur, bas-gauche */}
         <ModeCard
           variants={fadeUpChild}
           mode={MODES[3]}
           selected={mode === 'random'}
           onClick={() => handleModeChange('random')}
-          className="col-span-12 min-h-[110px]"
+          className="col-span-12 sm:col-span-6 min-h-[110px]"
+          numberSize="text-[100px] sm:text-[160px]"
+          horizontal
+        />
+
+        {/* Otaku : demi-largeur, bas-droite */}
+        <ModeCard
+          variants={fadeUpChild}
+          mode={MODES[4]}
+          selected={mode === 'otaku'}
+          onClick={() => handleModeChange('otaku')}
+          className="col-span-12 sm:col-span-6 min-h-[110px]"
           numberSize="text-[100px] sm:text-[160px]"
           horizontal
         />
@@ -346,6 +387,48 @@ export default function ModeSelect({ onStart, onBack }) {
                   <span className="serif-italic">Aucun paramètre.</span> On
                   pioche dans un large éventail de titres populaires.
                 </p>
+              )}
+
+              {mode === 'otaku' && (
+                <div>
+                  <h3 className="font-display font-bold text-2xl mb-2">
+                    Devine l'{' '}
+                    <span className="serif-italic text-accent-otaku">anime</span>.
+                  </h3>
+                  <p className="text-sm text-text-secondary mb-6">
+                    On te fait écouter un opening — à toi de retrouver la série
+                    dont il provient. Choisis ta{' '}
+                    <span className="serif-italic">difficulté</span> selon ton
+                    niveau d'otaku.
+                  </p>
+
+                  <div className="flex flex-wrap gap-2">
+                    {OTAKU_DIFFICULTIES.map((d) => {
+                      const active = selectedDifficulty === d.id
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => setSelectedDifficulty(d.id)}
+                          className={`
+                            px-5 py-2 rounded-full text-sm font-medium transition-all cursor-pointer
+                            ${
+                              active
+                                ? 'bg-accent-otaku text-white border border-accent-otaku'
+                                : 'bg-bg-elevated text-text-secondary hover:bg-bg-card border border-white/10'
+                            }
+                          `}
+                          title={d.hint}
+                        >
+                          {d.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="mt-3 text-xs text-text-tertiary">
+                    {OTAKU_DIFFICULTIES.find((d) => d.id === selectedDifficulty)?.hint}
+                  </p>
+                </div>
               )}
             </div>
           </motion.div>

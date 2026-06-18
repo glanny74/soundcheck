@@ -24,6 +24,7 @@ const MODE_LABELS = {
   multi: { label: 'Multi-artistes', accent: 'text-accent-blue' },
   genre: { label: 'Par genre', accent: 'text-accent-pink' },
   random: { label: 'Aléatoire', accent: 'text-accent-green' },
+  otaku: { label: 'Otaku', accent: 'text-accent-otaku' },
 }
 
 export default function History({ onBack }) {
