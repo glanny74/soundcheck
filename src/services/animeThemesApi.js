@@ -182,11 +182,51 @@ async function fetchAnimeAsTrack(slug) {
   }
 }
 
+/*
+  Exécute `fn` sur chaque élément en limitant le nombre d'appels SIMULTANÉS.
+  Indispensable ici : lancer 24 requêtes d'un coup fait échouer beaucoup de
+  navigateurs mobiles (limite de connexions simultanées) et déclenche le
+  rate-limit d'AnimeThemes. En limitant à quelques-unes à la fois, c'est fiable.
+*/
+async function mapWithConcurrency(items, fn, limit) {
+  const results = new Array(items.length)
+  let cursor = 0
+  async function worker() {
+    while (cursor < items.length) {
+      const i = cursor++
+      results[i] = await fn(items[i])
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker)
+  await Promise.all(workers)
+  return results
+}
+
+/** Dédoublonne une liste de « titres » par anime. */
+function dedupByAnime(tracks) {
+  return Array.from(new Map(tracks.map((t) => [t._animeId, t])).values())
+}
+
 /** Pioche dans une liste de slugs curés (Facile / Intermédiaire). */
 async function getCuratedOpenings(slugs) {
   const picked = shuffle(slugs).slice(0, PICK_PER_GAME)
-  const results = await Promise.all(picked.map(fetchAnimeAsTrack))
-  return shuffle(results.filter(Boolean))
+  // Concurrence limitée (5) pour rester fiable sur mobile.
+  const results = await mapWithConcurrency(picked, fetchAnimeAsTrack, 5)
+  let tracks = results.filter(Boolean)
+
+  // Filet de secours : si trop de requêtes ont échoué (réseau mobile capricieux,
+  // rate-limit...), on complète avec une pioche large (1 seule requête) pour
+  // toujours pouvoir lancer une partie plutôt que d'afficher une erreur.
+  if (tracks.length < 4) {
+    try {
+      const broad = await getBroadOpenings()
+      tracks = dedupByAnime(tracks.concat(broad))
+    } catch {
+      // tant pis, on renvoie ce qu'on a
+    }
+  }
+
+  return shuffle(tracks)
 }
 
 /**
