@@ -33,19 +33,16 @@
 
 const API_BASE = 'https://api.animethemes.moe'
 
-// import.meta.env.DEV === true quand on lance `vite` en local.
-const DEV = import.meta.env.DEV
-
 /*
-  Construit l'URL d'appel à l'API.
-   - En DEV : appel direct (le CORS d'AnimeThemes marche depuis localhost).
-   - En PROD : on passe par notre proxy serverless Vercel (/api/animethemes),
-     ce qui rend l'appel « même origine » et donc fiable même sur mobile
-     (iOS Safari bloque les appels directs cross-origin en rafale).
+  Appel direct à l'API AnimeThemes (CORS OK sur desktop, dev comme prod).
+  NB : on était passé par un proxy serverless pour le mobile, mais l'audio
+  OGG/Opus d'AnimeThemes ne se lit de toute façon pas sur mobile (iOS surtout),
+  donc l'Otaku reste un mode desktop — pas besoin du proxy, et l'appel direct
+  est bien plus rapide (pas 24 invocations serverless par partie).
   @param {string} path - chemin + query, ex. "/anime/naruto?include=images"
 */
 function apiUrl(path) {
-  return DEV ? `${API_BASE}${path}` : `/api/animethemes?path=${encodeURIComponent(path)}`
+  return `${API_BASE}${path}`
 }
 
 // Liste curée, classée par popularité décroissante (source : AniList).
@@ -197,26 +194,6 @@ async function fetchAnimeAsTrack(slug) {
   }
 }
 
-/*
-  Exécute `fn` sur chaque élément en limitant le nombre d'appels SIMULTANÉS.
-  Indispensable ici : lancer 24 requêtes d'un coup fait échouer beaucoup de
-  navigateurs mobiles (limite de connexions simultanées) et déclenche le
-  rate-limit d'AnimeThemes. En limitant à quelques-unes à la fois, c'est fiable.
-*/
-async function mapWithConcurrency(items, fn, limit) {
-  const results = new Array(items.length)
-  let cursor = 0
-  async function worker() {
-    while (cursor < items.length) {
-      const i = cursor++
-      results[i] = await fn(items[i])
-    }
-  }
-  const workers = Array.from({ length: Math.min(limit, items.length) }, worker)
-  await Promise.all(workers)
-  return results
-}
-
 /** Dédoublonne une liste de « titres » par anime. */
 function dedupByAnime(tracks) {
   return Array.from(new Map(tracks.map((t) => [t._animeId, t])).values())
@@ -225,13 +202,13 @@ function dedupByAnime(tracks) {
 /** Pioche dans une liste de slugs curés (Facile / Intermédiaire). */
 async function getCuratedOpenings(slugs) {
   const picked = shuffle(slugs).slice(0, PICK_PER_GAME)
-  // Concurrence limitée (5) pour rester fiable sur mobile.
-  const results = await mapWithConcurrency(picked, fetchAnimeAsTrack, 5)
+  // Appels en parallèle (rapide sur desktop, qui est la cible de ce mode).
+  const results = await Promise.all(picked.map(fetchAnimeAsTrack))
   let tracks = results.filter(Boolean)
 
-  // Filet de secours : si trop de requêtes ont échoué (réseau mobile capricieux,
-  // rate-limit...), on complète avec une pioche large (1 seule requête) pour
-  // toujours pouvoir lancer une partie plutôt que d'afficher une erreur.
+  // Filet de secours : si trop de requêtes ont échoué (réseau, rate-limit...),
+  // on complète avec une pioche large (1 seule requête) pour toujours pouvoir
+  // lancer une partie plutôt que d'afficher une erreur.
   if (tracks.length < 4) {
     try {
       const broad = await getBroadOpenings()
