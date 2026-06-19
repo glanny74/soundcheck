@@ -33,6 +33,21 @@
 
 const API_BASE = 'https://api.animethemes.moe'
 
+// import.meta.env.DEV === true quand on lance `vite` en local.
+const DEV = import.meta.env.DEV
+
+/*
+  Construit l'URL d'appel à l'API.
+   - En DEV : appel direct (le CORS d'AnimeThemes marche depuis localhost).
+   - En PROD : on passe par notre proxy serverless Vercel (/api/animethemes),
+     ce qui rend l'appel « même origine » et donc fiable même sur mobile
+     (iOS Safari bloque les appels directs cross-origin en rafale).
+  @param {string} path - chemin + query, ex. "/anime/naruto?include=images"
+*/
+function apiUrl(path) {
+  return DEV ? `${API_BASE}${path}` : `/api/animethemes?path=${encodeURIComponent(path)}`
+}
+
 // Liste curée, classée par popularité décroissante (source : AniList).
 const POPULAR_ANIME = [
   'shingeki_no_kyojin', 'kimetsu_no_yaiba', 'jujutsu_kaisen', 'death_note',
@@ -164,7 +179,7 @@ function buildTrack(anime, theme) {
  */
 async function fetchAnimeAsTrack(slug) {
   try {
-    const url = `${API_BASE}/anime/${slug}?include=${encodeURIComponent(SLUG_INCLUDE)}`
+    const url = apiUrl(`/anime/${slug}?include=${encodeURIComponent(SLUG_INCLUDE)}`)
     const response = await fetch(url)
     if (!response.ok) return null
 
@@ -236,10 +251,10 @@ async function getCuratedOpenings(slugs) {
  */
 async function getBroadOpenings() {
   const page = Math.floor(Math.random() * 40) + 1
-  const url =
-    `${API_BASE}/animetheme` +
-    `?include=${encodeURIComponent(THEME_INCLUDE)}` +
-    `&filter[type]=OP&page[size]=100&page[number]=${page}`
+  const url = apiUrl(
+    `/animetheme?include=${encodeURIComponent(THEME_INCLUDE)}` +
+      `&filter[type]=OP&page[size]=100&page[number]=${page}`
+  )
 
   const response = await fetch(url)
   if (!response.ok) throw new Error(`Erreur AnimeThemes (${response.status})`)
