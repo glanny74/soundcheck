@@ -524,6 +524,11 @@ export default function Game({ players, config, onFinish }) {
     question.correct.album?.cover_medium
   const isLastRound = roundIndex + 1 >= config.totalRounds
   const timerDanger = timeLeft <= 5
+  // On masque l'artiste pendant les propositions / l'attribution :
+  //  - Otaku : on devine l'anime, pas la chanson ;
+  //  - Multi-artistes : sinon reconnaître la voix suffit (trop facile).
+  // L'artiste est révélé au moment du reveal.
+  const hideArtist = config.mode === 'otaku' || config.mode === 'multi'
 
   return (
     <motion.main
@@ -684,10 +689,12 @@ export default function Game({ players, config, onFinish }) {
                   </p>
                   <p className="font-display font-bold text-xl sm:text-2xl px-2">
                     {selectedAnswer.title}
-                    <span className="serif-italic text-text-tertiary">
-                      {' '}
-                      — {selectedAnswer.artist.name}
-                    </span>
+                    {!hideArtist && (
+                      <span className="serif-italic text-text-tertiary">
+                        {' '}
+                        — {selectedAnswer.artist.name}
+                      </span>
+                    )}
                   </p>
                   <p className="mt-4 text-sm sm:text-base text-text-secondary">
                     Qui a{' '}
@@ -731,10 +738,8 @@ export default function Game({ players, config, onFinish }) {
                   key={track.id + '-' + i}
                   index={i + 1}
                   track={track}
-                  // En mode Otaku, on cache le titre de la chanson dans les
-                  // propositions : on ne montre que le nom de l'anime (sinon on
-                  // donnerait un indice trop fort). La chanson est révélée après.
-                  hideSubtitle={config.mode === 'otaku'}
+                  // Masque l'artiste dans les propositions (Otaku + Multi-artistes).
+                  hideSubtitle={hideArtist}
                   onClick={() => handleAnswerSelect(track)}
                 />
               ))}

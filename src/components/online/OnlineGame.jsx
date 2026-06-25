@@ -275,7 +275,9 @@ export default function OnlineGame({ room: initialRoom, hostConfig, onExit, onBa
     onExit()
   }
 
-  const hideSubtitle = room.mode === 'otaku'
+  // Masque l'artiste pendant les propositions (Otaku + Multi-artistes) ; il est
+  // révélé au reveal. En multi, sinon reconnaître la voix rendrait la manche triviale.
+  const hideSubtitle = room.mode === 'otaku' || room.mode === 'multi'
   const ranked = [...players].sort((a, b) => b.score - a.score)
   const answerLocked = !!myAnswer || room.round_revealed
 
