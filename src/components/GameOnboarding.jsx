@@ -84,15 +84,8 @@ export default function GameOnboarding({ onDismiss }) {
           choisis le joueur tranquillement.
         </p>
 
-        <button
-          onClick={onDismiss}
-          className="editorial-link-primary group cursor-pointer
-                     font-display font-medium text-xl sm:text-2xl text-text-primary"
-        >
-          <span>C'est compris</span>
-          <span className="arrow text-accent-green text-2xl sm:text-3xl leading-none">
-            →
-          </span>
+        <button onClick={onDismiss} className="btn-primary bg-accent-green text-bg-primary">
+          C'est compris
         </button>
       </motion.div>
     </motion.div>

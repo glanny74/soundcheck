@@ -70,12 +70,8 @@ export default function ResetPassword({ onDone }) {
             retourner jouer.
           </p>
           <div className="flex justify-end pt-2">
-            <button
-              onClick={onDone}
-              className="editorial-link group cursor-pointer font-display font-medium text-xl text-text-primary"
-            >
-              <span>Continuer</span>
-              <span className="arrow text-accent-blue text-2xl leading-none">→</span>
+            <button onClick={onDone} className="btn-primary bg-accent-blue text-text-primary">
+              Continuer
             </button>
           </div>
         </div>
@@ -106,19 +102,14 @@ export default function ResetPassword({ onDone }) {
           </FieldLine>
 
           {error && (
-            <p className="text-accent-pink text-sm">
+            <p className="text-danger text-sm">
               <span className="serif-italic">erreur —</span> {error}
             </p>
           )}
 
           <div className="flex justify-end pt-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="editorial-link group cursor-pointer font-display font-medium text-xl text-text-primary disabled:opacity-40"
-            >
-              <span>{loading ? 'Enregistrement…' : 'Enregistrer'}</span>
-              <span className="arrow text-accent-blue text-2xl leading-none">→</span>
+            <button type="submit" disabled={loading} className="btn-primary bg-accent-blue text-text-primary">
+              {loading ? 'Enregistrement…' : 'Enregistrer'}
             </button>
           </div>
         </form>

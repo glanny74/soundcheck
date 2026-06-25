@@ -784,12 +784,8 @@ export default function Game({ players, config, onFinish }) {
               transition={{ delay: 0.4, duration: 0.4 }}
               className="mt-10 flex justify-center sm:justify-end"
             >
-              <button
-                onClick={advanceToNext}
-                className="editorial-link-primary group cursor-pointer font-display font-medium text-xl sm:text-2xl text-text-primary"
-              >
-                <span>{isLastRound ? 'Voir les résultats' : 'Manche suivante'}</span>
-                <span className="arrow text-accent-green text-2xl sm:text-3xl leading-none">→</span>
+              <button onClick={advanceToNext} className="btn-primary bg-accent-green text-bg-primary">
+                {isLastRound ? 'Voir les résultats' : 'Manche suivante'}
               </button>
             </motion.div>
           )}

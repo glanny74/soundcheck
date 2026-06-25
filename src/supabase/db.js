@@ -25,6 +25,7 @@ function mapProfile(row) {
     id: row.id,
     email: row.email,
     username: row.username,
+    fullName: row.full_name,
     photoURL: row.photo_url,
     provider: row.provider,
     totalScore: row.total_score,

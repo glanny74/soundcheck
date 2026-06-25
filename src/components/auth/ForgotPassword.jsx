@@ -52,14 +52,9 @@ export default function ForgotPassword({ onBack }) {
       accent="pink"
       description="Renseigne ton email et nous t'enverrons un lien pour le réinitialiser."
     >
-      <button
-        onClick={onBack}
-        className="editorial-link group cursor-pointer text-text-secondary hover:text-text-primary text-sm mb-6"
-      >
-        <span className="arrow text-accent-pink text-xl leading-none rotate-180 inline-block">
-          →
-        </span>
-        <span>Retour</span>
+      <button onClick={onBack} className="btn-back mb-6">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+        Retour
       </button>
 
       {sent ? (
@@ -97,19 +92,14 @@ export default function ForgotPassword({ onBack }) {
           </div>
 
           {error && (
-            <p className="text-accent-pink text-sm">
+            <p className="text-danger text-sm">
               <span className="serif-italic">erreur —</span> {error}
             </p>
           )}
 
           <div className="flex justify-end pt-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="editorial-link group cursor-pointer font-display font-medium text-xl text-text-primary disabled:opacity-40"
-            >
-              <span>{loading ? 'Envoi…' : 'Envoyer le lien'}</span>
-              <span className="arrow text-accent-pink text-2xl leading-none">→</span>
+            <button type="submit" disabled={loading} className="btn-primary bg-accent-pink text-text-primary">
+              {loading ? 'Envoi…' : 'Envoyer le lien'}
             </button>
           </div>
         </form>

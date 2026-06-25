@@ -31,19 +31,24 @@ import { isUsernameTaken } from './db'
  * @returns {boolean} needsConfirmation - true si un mail de confirmation a
  *   été envoyé et qu'aucune session n'est encore ouverte (cas standard).
  */
-export async function signUpWithEmail({ email, password, username }) {
+export async function signUpWithEmail({ email, password, username, firstName, lastName }) {
   // Vérification d'unicité du pseudo avant création (sinon le trigger SQL
   // suffixerait silencieusement le pseudo en cas de collision).
   if (await isUsernameTaken(username)) {
     throw new Error('Ce nom d\'utilisateur est déjà pris.')
   }
 
+  // Nom complet « Prénom Nom » : rempli la colonne full_name (profiles + Display
+  // name côté Supabase Auth), comme le fait Google nativement. Le pseudo reste
+  // distinct (c'est lui qu'on affiche en jeu).
+  const fullName = [firstName, lastName].map((s) => (s || '').trim()).filter(Boolean).join(' ')
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      // Métadonnées lues par le trigger handle_new_user (-> profiles.username)
-      data: { username },
+      // Métadonnées lues par le trigger handle_new_user (-> profiles.username / full_name)
+      data: { username, full_name: fullName },
       // URL de retour après clic sur le lien de confirmation. Doit figurer
       // dans la liste blanche « Redirect URLs » du dashboard Supabase.
       emailRedirectTo: window.location.origin,

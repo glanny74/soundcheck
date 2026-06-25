@@ -234,14 +234,9 @@ export default function ModeSelect({ onStart, onBack }) {
 
       {/* === Header === */}
       <header className="relative z-10 flex items-start justify-between gap-6">
-        <button
-          onClick={onBack}
-          className="editorial-link group cursor-pointer text-text-secondary hover:text-text-primary text-sm"
-        >
-          <span className="arrow text-accent-pink text-xl leading-none rotate-180 inline-block">
-            →
-          </span>
-          <span>Retour</span>
+        <button onClick={onBack} className="btn-back">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+          Retour
         </button>
 
         <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.3em]">
@@ -466,19 +461,15 @@ export default function ModeSelect({ onStart, onBack }) {
       {/* === Erreur + CTA === */}
       <div className="relative z-10 mt-10 flex flex-col sm:flex-row justify-between items-center gap-6 pb-8">
         {error ? (
-          <p className="text-accent-pink text-sm">
+          <p className="text-danger text-sm">
             <span className="serif-italic">erreur —</span> {error}
           </p>
         ) : (
           <div />
         )}
 
-        <button
-          onClick={handleStart}
-          className="editorial-link-primary group cursor-pointer font-display font-medium text-2xl text-text-primary"
-        >
-          <span>Démarrer la partie</span>
-          <span className="arrow text-accent-green text-3xl leading-none">→</span>
+        <button onClick={handleStart} className="btn-primary bg-accent-green text-bg-primary">
+          Démarrer la partie
         </button>
       </div>
     </motion.main>

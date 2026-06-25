@@ -41,6 +41,7 @@ const MARQUEE_ITEMS = [
 
 export default function Home({
   onStart,
+  onOnline,
   onLogout,
   onProfile,
   onHistory,
@@ -149,17 +150,17 @@ export default function Home({
             transition={{ delay: 1.0, duration: 0.6, ease: EASE_OUT }}
             className="mt-10 sm:mt-12 flex flex-col items-start gap-5"
           >
-            <button
-              onClick={onStart}
-              className="editorial-link-primary group cursor-pointer
-                         font-display font-medium text-xl sm:text-3xl
-                         text-text-primary"
-            >
-              <span>Démarrer une partie</span>
-              <span className="arrow text-accent-green text-2xl sm:text-4xl leading-none">
-                →
-              </span>
+            <button onClick={onStart} className="btn-primary bg-accent-green text-bg-primary">
+              Jouer en local
             </button>
+
+            {/* Multijoueur en ligne : réservé aux comptes connectés (onOnline
+                n'est fourni que dans ce cas). Caché en mode invité. */}
+            {onOnline && (
+              <button onClick={onOnline} className="btn-primary bg-accent-purple text-text-primary">
+                Jouer en ligne
+              </button>
+            )}
 
             {/* Lien secondaire : ouvre le modal des règles. Discret pour ne
                 pas concurrencer le CTA principal, mais visible pour les

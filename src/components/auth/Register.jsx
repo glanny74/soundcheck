@@ -15,6 +15,8 @@ import AuthLayout from './AuthLayout'
 */
 
 export default function Register({ onSwitchToLogin, onBack }) {
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -27,6 +29,12 @@ export default function Register({ onSwitchToLogin, onBack }) {
     setError('')
 
     // Validation client minimale (Supabase fera le reste)
+    const trimmedFirstName = firstName.trim()
+    const trimmedLastName = lastName.trim()
+    if (!trimmedFirstName || !trimmedLastName) {
+      setError('Renseigne ton prénom et ton nom.')
+      return
+    }
     const trimmedUsername = username.trim()
     if (trimmedUsername.length < 3) {
       setError('Le pseudo doit faire au moins 3 caractères.')
@@ -51,6 +59,8 @@ export default function Register({ onSwitchToLogin, onBack }) {
         email: email.trim(),
         password,
         username: trimmedUsername,
+        firstName: trimmedFirstName,
+        lastName: trimmedLastName,
       })
       // Compte créé : un mail de confirmation est parti. On affiche l'écran
       // d'attente. (Si la confirmation était désactivée, AuthContext aurait
@@ -94,14 +104,9 @@ export default function Register({ onSwitchToLogin, onBack }) {
         </>
       }
     >
-      <button
-        onClick={sent ? onSwitchToLogin : onBack}
-        className="editorial-link group cursor-pointer text-text-secondary hover:text-text-primary text-sm mb-6"
-      >
-        <span className="arrow text-accent-purple text-xl leading-none rotate-180 inline-block">
-          →
-        </span>
-        <span>{sent ? 'Aller à la connexion' : 'Retour'}</span>
+      <button onClick={sent ? onSwitchToLogin : onBack} className="btn-back mb-6">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+        {sent ? 'Aller à la connexion' : 'Retour'}
       </button>
 
       {sent ? (
@@ -124,6 +129,34 @@ export default function Register({ onSwitchToLogin, onBack }) {
       ) : (
       <>
       <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-2 gap-4">
+          <FieldLine label="Prénom" accent="purple">
+            <input
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="Prénom"
+              maxLength={40}
+              autoComplete="given-name"
+              className="w-full bg-transparent text-text-primary placeholder:text-text-tertiary
+                         text-lg py-2 focus:outline-none font-medium"
+            />
+          </FieldLine>
+
+          <FieldLine label="Nom" accent="purple">
+            <input
+              type="text"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Nom"
+              maxLength={40}
+              autoComplete="family-name"
+              className="w-full bg-transparent text-text-primary placeholder:text-text-tertiary
+                         text-lg py-2 focus:outline-none font-medium"
+            />
+          </FieldLine>
+        </div>
+
         <FieldLine label="Pseudo" accent="purple">
           <input
             type="text"
@@ -162,19 +195,14 @@ export default function Register({ onSwitchToLogin, onBack }) {
         </FieldLine>
 
         {error && (
-          <p className="text-accent-pink text-sm">
+          <p className="text-danger text-sm">
             <span className="serif-italic">erreur —</span> {error}
           </p>
         )}
 
         <div className="flex justify-end pt-2">
-          <button
-            type="submit"
-            disabled={loading}
-            className="editorial-link group cursor-pointer font-display font-medium text-xl text-text-primary disabled:opacity-40"
-          >
-            <span>{loading ? 'Création…' : 'Créer mon compte'}</span>
-            <span className="arrow text-accent-purple text-2xl leading-none">→</span>
+          <button type="submit" disabled={loading} className="btn-primary bg-accent-purple text-text-primary">
+            {loading ? 'Création…' : 'Créer mon compte'}
           </button>
         </div>
       </form>

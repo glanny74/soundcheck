@@ -14,6 +14,9 @@ import Game from './components/Game'
 import Results from './components/Results'
 import Profile from './components/profile/Profile'
 import History from './components/profile/History'
+import OnlineHome from './components/online/OnlineHome'
+import Lobby from './components/online/Lobby'
+import OnlineGame from './components/online/OnlineGame'
 
 /*
   Composant racine — orchestre toute l'application.
@@ -44,6 +47,9 @@ const SCREENS = {
   RESULTS: 'results',
   PROFILE: 'profile',
   HISTORY: 'history',
+  ONLINE_HOME: 'online_home',
+  LOBBY: 'lobby',
+  ONLINE_GAME: 'online_game',
 }
 
 const AUTH_SCREENS = [SCREENS.WELCOME, SCREENS.LOGIN, SCREENS.REGISTER, SCREENS.FORGOT]
@@ -67,6 +73,12 @@ function AppContent() {
 
   const [players, setPlayers] = useState([])
   const [gameConfig, setGameConfig] = useState(null)
+  // Salon multijoueur en ligne courant (null hors ligne)
+  const [currentRoom, setCurrentRoom] = useState(null)
+  // Sélection de mode en contexte « en ligne » (l'hôte configure la partie)
+  const [onlineConfiguring, setOnlineConfiguring] = useState(false)
+  // Config choisie par l'hôte, passée à OnlineGame pour lancer la partie
+  const [onlineConfig, setOnlineConfig] = useState(null)
 
   // Quand l'utilisateur vient de se connecter (Login/Register/Google, ou
   // retour d'un lien de confirmation email), on le pousse sur Home.
@@ -83,6 +95,9 @@ function AppContent() {
       setCurrentScreen(SCREENS.WELCOME)
       setPlayers([])
       setGameConfig(null)
+      setCurrentRoom(null)
+      setOnlineConfig(null)
+      setOnlineConfiguring(false)
     }
   }, [user, isGuest, currentScreen])
 
@@ -139,6 +154,63 @@ function AppContent() {
     setPlayers([])
     setGameConfig(null)
     setCurrentScreen(SCREENS.HOME)
+  }
+
+  // ---------- multijoueur en ligne ----------
+  // Réservé aux connectés (le bouton n'apparaît pas en mode invité).
+  const goToOnline = () => setCurrentScreen(SCREENS.ONLINE_HOME)
+
+  // Salon créé ou rejoint → on entre dans le lobby.
+  const handleRoomReady = (room) => {
+    setCurrentRoom(room)
+    setCurrentScreen(SCREENS.LOBBY)
+  }
+
+  // Sortie du lobby / de la partie → retour à l'accueil.
+  const handleLeaveRoom = () => {
+    setCurrentRoom(null)
+    setOnlineConfig(null)
+    setOnlineConfiguring(false)
+    setCurrentScreen(SCREENS.HOME)
+  }
+
+  // L'hôte clique « Lancer » dans le lobby → il va choisir le mode (ModeSelect).
+  const handleHostConfigure = () => {
+    setOnlineConfiguring(true)
+    setCurrentScreen(SCREENS.MODE_SELECT)
+  }
+
+  // La partie a démarré (statut 'playing' détecté) → tout le monde bascule sur le jeu.
+  const handleOnlineGameStarted = () => {
+    setCurrentScreen(SCREENS.ONLINE_GAME)
+  }
+
+  // « Rejouer » : l'hôte a relancé → on revient au lobby (même salon, mêmes joueurs).
+  const handleBackToLobby = () => {
+    setOnlineConfig(null)
+    setOnlineConfiguring(false)
+    setCurrentScreen(SCREENS.LOBBY)
+  }
+
+  // ModeSelect sert au local ET à l'en ligne : on aiguille selon le contexte.
+  const handleModeChosen = (config) => {
+    if (onlineConfiguring) {
+      setOnlineConfig(config) // l'hôte a choisi le mode → OnlineGame lance la partie
+      setOnlineConfiguring(false)
+      setCurrentScreen(SCREENS.ONLINE_GAME)
+    } else {
+      handleGameStart(config)
+    }
+  }
+
+  // Retour depuis ModeSelect : vers le lobby en contexte en ligne, sinon setup.
+  const handleModeBack = () => {
+    if (onlineConfiguring) {
+      setOnlineConfiguring(false)
+      setCurrentScreen(SCREENS.LOBBY)
+    } else {
+      setCurrentScreen(SCREENS.PLAYER_SETUP)
+    }
   }
 
   // Navigation vers les écrans utilisateur (depuis Home → UserMenu)
@@ -210,10 +282,41 @@ function AppContent() {
           <Home
             key="home"
             onStart={goToPlayerSetup}
+            onOnline={user ? goToOnline : null}
             onLogout={handleLogout}
             onProfile={goToProfile}
             onHistory={goToHistory}
             isGuest={isGuest}
+          />
+        )}
+
+        {/* === Zone MULTIJOUEUR EN LIGNE (connectés uniquement) === */}
+        {currentScreen === SCREENS.ONLINE_HOME && user && (
+          <OnlineHome
+            key="online_home"
+            onCreated={handleRoomReady}
+            onJoined={handleRoomReady}
+            onBack={backToHome}
+          />
+        )}
+
+        {currentScreen === SCREENS.LOBBY && user && currentRoom && (
+          <Lobby
+            key="lobby"
+            room={currentRoom}
+            onLeave={handleLeaveRoom}
+            onConfigure={handleHostConfigure}
+            onGameStarted={handleOnlineGameStarted}
+          />
+        )}
+
+        {currentScreen === SCREENS.ONLINE_GAME && user && currentRoom && (
+          <OnlineGame
+            key="online_game"
+            room={currentRoom}
+            hostConfig={onlineConfig}
+            onExit={handleLeaveRoom}
+            onBackToLobby={handleBackToLobby}
           />
         )}
 
@@ -242,8 +345,8 @@ function AppContent() {
           <ModeSelect
             key="mode_select"
             players={players}
-            onStart={handleGameStart}
-            onBack={() => setCurrentScreen(SCREENS.PLAYER_SETUP)}
+            onStart={handleModeChosen}
+            onBack={handleModeBack}
           />
         )}
 

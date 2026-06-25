@@ -179,15 +179,8 @@ export default function HowToPlay({ onClose }) {
 
         {/* CTA fermer */}
         <div className="flex justify-end">
-          <button
-            onClick={onClose}
-            className="editorial-link-primary group cursor-pointer
-                       font-display font-medium text-lg sm:text-xl text-text-primary"
-          >
-            <span>C'est noté</span>
-            <span className="arrow text-accent-green text-2xl leading-none">
-              →
-            </span>
+          <button onClick={onClose} className="btn-primary bg-accent-green text-bg-primary">
+            C'est noté
           </button>
         </div>
       </motion.div>

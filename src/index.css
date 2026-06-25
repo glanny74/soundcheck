@@ -19,9 +19,13 @@
   --color-accent-otaku: #DC2626;
 
   --color-text-primary: #FFFFFF;
-  --color-text-secondary: #B3B3B3;
-  --color-text-tertiary: #6B6B6B;
+  --color-text-secondary: #B7B7BD;
+  /* Remonté de #6B6B6B → #9A9AA2 pour passer le contraste 4.5:1 sur fond noir */
+  --color-text-tertiary: #9A9AA2;
   --color-text-muted: #6B7280;
+
+  /* Couleur d'ERREUR distincte de l'accent rose (lisible sur fond sombre) */
+  --color-danger: #FB7185;
 
   /* Familles typographiques — Instrument Serif est utilisé en italique pour
      les éléments d'accent style magazine (numéros, citations, labels). */
@@ -198,4 +202,72 @@ body {
   font-family: var(--font-serif);
   font-style: italic;
   font-weight: 400;
+}
+
+/* ===================================================================== */
+/* Boutons (refonte UI : actions = boutons PLEINS, retours = pilules)       */
+/* ===================================================================== */
+
+/* Bouton d'action principal : plein, arrondi, grande zone de clic.
+   La COULEUR se met via les utilitaires Tailwind (ex: bg-accent-green
+   text-bg-primary) — cette classe ne gère que la forme/la taille. */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.0625rem;       /* 17px */
+  line-height: 1;
+  border-radius: 9999px;
+  padding: 0.9rem 2rem;
+  min-height: 52px;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:active { transform: scale(0.99); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Bouton retour / secondaire : pilule visible avec chevron (cible ≥ 44px). */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem 0.6rem 0.65rem;
+  min-height: 44px;
+  border-radius: 9999px;
+  background: var(--color-bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.btn-back:hover { color: #fff; border-color: rgba(255, 255, 255, 0.25); }
+.btn-back svg { flex-shrink: 0; }
+
+/* ===================================================================== */
+/* Accessibilité : focus clavier visible partout                           */
+/* ===================================================================== */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-accent-green);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ===================================================================== */
+/* Accessibilité : respect de prefers-reduced-motion                       */
+/* ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .animate-drift,
+  .animate-marquee,
+  .animate-pulse-glow,
+  .bar-visualizer {
+    animation: none !important;
+  }
+  html { scroll-behavior: auto; }
 }

@@ -196,12 +196,8 @@ export default function Results({ players, onReplay, onNewGame }) {
           className="mt-16 flex flex-col sm:flex-row gap-10 sm:gap-16 justify-center items-start sm:items-center"
         >
           <div className="flex flex-col items-start sm:items-center gap-2">
-            <button
-              onClick={onReplay}
-              className="editorial-link group cursor-pointer font-display font-medium text-2xl text-text-primary"
-            >
-              <span>Rejouer</span>
-              <span className="arrow text-accent-green text-3xl leading-none">→</span>
+            <button onClick={onReplay} className="btn-primary bg-accent-green text-bg-primary">
+              Rejouer
             </button>
             <p className="text-[10px] uppercase tracking-[0.3em] text-text-tertiary">
               Mêmes joueurs,{' '}
@@ -214,12 +210,9 @@ export default function Results({ players, onReplay, onNewGame }) {
           <div className="flex flex-col items-start sm:items-center gap-2">
             <button
               onClick={onNewGame}
-              className="editorial-link group cursor-pointer font-display font-medium text-2xl text-text-secondary"
+              className="cursor-pointer font-display font-medium text-lg text-text-secondary hover:text-text-primary underline underline-offset-4 decoration-white/20"
             >
-              <span>
-                <span className="serif-italic">ou</span> nouvelle partie
-              </span>
-              <span className="arrow text-text-secondary text-3xl leading-none">→</span>
+              <span className="serif-italic">ou</span> nouvelle partie
             </button>
             <p className="text-[10px] uppercase tracking-[0.3em] text-text-tertiary">
               Tout{' '}

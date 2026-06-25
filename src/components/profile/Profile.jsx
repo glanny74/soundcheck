@@ -64,14 +64,9 @@ export default function Profile({ onBack, onStart }) {
         animate="animate"
         className="relative z-10 max-w-5xl mx-auto"
       >
-        <button
-          onClick={onBack}
-          className="editorial-link group cursor-pointer text-text-secondary hover:text-text-primary text-sm mb-8"
-        >
-          <span className="arrow text-accent-green text-xl leading-none rotate-180 inline-block">
-            →
-          </span>
-          <span>Retour à l'accueil</span>
+        <button onClick={onBack} className="btn-back mb-8">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+          Retour à l'accueil
         </button>
 
         {/* Titre */}
@@ -157,12 +152,8 @@ export default function Profile({ onBack, onStart }) {
               les cartes ci-dessous dès que tu auras lancé ta première manche.
             </p>
             {onStart && (
-              <button
-                onClick={onStart}
-                className="editorial-link group cursor-pointer font-display font-medium text-base sm:text-lg text-text-primary"
-              >
-                <span>Démarrer ma première partie</span>
-                <span className="arrow text-accent-green text-xl leading-none">→</span>
+              <button onClick={onStart} className="btn-primary bg-accent-green text-bg-primary">
+                Démarrer ma première partie
               </button>
             )}
           </motion.div>

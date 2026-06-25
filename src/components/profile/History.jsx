@@ -49,13 +49,8 @@ export default function History({ onBack }) {
         animate="animate"
         className="relative z-10 max-w-4xl mx-auto"
       >
-        <button
-          onClick={onBack}
-          className="editorial-link group cursor-pointer text-text-secondary hover:text-text-primary text-sm mb-8"
-        >
-          <span className="arrow text-accent-purple text-xl leading-none rotate-180 inline-block">
-            →
-          </span>
+        <button onClick={onBack} className="btn-back mb-8">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
           <span>Retour à l'accueil</span>
         </button>
 

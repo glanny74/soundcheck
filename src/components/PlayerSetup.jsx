@@ -67,14 +67,9 @@ export default function PlayerSetup({ onValidate, onBack }) {
 
       {/* === Bandeau du haut : retour + indicateur d'étape === */}
       <header className="relative z-10 flex items-start justify-between gap-6">
-        <button
-          onClick={onBack}
-          className="editorial-link group cursor-pointer text-text-secondary hover:text-text-primary text-sm"
-        >
-          <span className="arrow text-accent-purple text-xl leading-none rotate-180 inline-block">
-            →
-          </span>
-          <span>Retour</span>
+        <button onClick={onBack} className="btn-back">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+          Retour
         </button>
 
         <StepIndicator current={1} total={3} />
@@ -184,7 +179,7 @@ export default function PlayerSetup({ onValidate, onBack }) {
               <motion.p
                 initial={{ opacity: 0, y: -5 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-accent-pink text-sm"
+                className="text-danger text-sm"
               >
                 <span className="serif-italic">erreur —</span> {error}
               </motion.p>
@@ -192,12 +187,8 @@ export default function PlayerSetup({ onValidate, onBack }) {
 
             {/* CTA en bas à droite, style lien primary (underline persistant) */}
             <motion.div variants={fadeUpChild} className="flex justify-end pt-4">
-              <button
-                type="submit"
-                className="editorial-link-primary group cursor-pointer font-display font-medium text-2xl text-text-primary"
-              >
-                <span>Continuer</span>
-                <span className="arrow text-accent-purple text-3xl leading-none">→</span>
+              <button type="submit" className="btn-primary bg-accent-purple text-text-primary">
+                Continuer
               </button>
             </motion.div>
           </motion.form>
