@@ -29,9 +29,11 @@ import { EASE_OUT, pageTransition } from '../../utils/motion'
 
   Lecture MANUELLE : à chaque manche, chaque joueur appuie sur « Lancer
   l'extrait » pour entendre (les navigateurs mobiles interdisent le son
-  automatique). Le chrono démarre à ce moment-là. La manche se termine quand
-  quelqu'un trouve (1er bon buzz, tranché serveur) ou quand le chrono de l'hôte
-  arrive à zéro.
+  automatique). Le chrono démarre à ce moment-là. La manche se termine dans
+  trois cas, tous tranchés côté serveur : quelqu'un trouve (1er bon buzz), tous
+  les joueurs ont répondu sans trouver (clôture anticipée, personne ne peut plus
+  marquer), ou le temps est écoulé — auquel cas n'importe quel joueur peut la
+  clore, pas seulement l'hôte.
 
   Phases (déduites de l'état serveur) :
    - preparing : l'HÔTE construit les questions (Deezer) puis lance la partie
@@ -66,6 +68,9 @@ export default function OnlineGame({ room: initialRoom, hostConfig, onExit, onBa
   const gameStartedRef = useRef(false) // a-t-on déjà vu la partie démarrer ?
   const sendPlayRef = useRef(null) // pour diffuser le signal « play » aux autres
   const onPlayRef = useRef(() => {}) // toujours pointé sur le handler le plus récent
+  const deadlineRef = useRef(0) // fin du chrono de la manche (timestamp), 0 = pas lancé
+  const lastTickRef = useRef(QUESTION_S) // dernière seconde jouée (évite les tics en double)
+  const answeredRef = useRef(false) // ce joueur a déjà répondu à la manche
 
   function clearTimers() {
     clearTimeout(sampleTimerRef.current)
@@ -90,7 +95,25 @@ export default function OnlineGame({ room: initialRoom, hostConfig, onExit, onBa
     // les effets ne se déclenchent que si les valeurs changent vraiment, ce poll
     // est sans effet quand tout est déjà à jour.
     const pollId = setInterval(() => {
-      fetchRoom(initialRoom.id).then((r) => r && setRoom(r)).catch(() => {})
+      fetchRoom(initialRoom.id)
+        .then((r) => {
+          if (!r) return
+          setRoom(r)
+          // Second filet : si le chrono est écoulé mais que la manche est
+          // toujours ouverte (appel précédent perdu, timer étranglé par le
+          // navigateur), on redemande la clôture. Le serveur refuse tant que
+          // le temps n'est pas réellement écoulé, et ne fait rien si la manche
+          // est déjà révélée.
+          if (
+            r.status === 'playing' &&
+            !r.round_revealed &&
+            deadlineRef.current &&
+            Date.now() > deadlineRef.current
+          ) {
+            endRoundTimeout(initialRoom.id).catch(() => {})
+          }
+        })
+        .catch(() => {})
       fetchPlayers(initialRoom.id).then(setPlayers).catch(() => {})
     }, 4000)
 
@@ -145,6 +168,7 @@ export default function OnlineGame({ room: initialRoom, hostConfig, onExit, onBa
     if (room.round_revealed) {
       // Reveal : stop audio/chrono + on récupère bonne réponse + gagnant + scores.
       clearTimers()
+      deadlineRef.current = 0
       if (audioRef.current) audioRef.current.pause()
       getRoundResult(room.id)
         .then((res) => {
@@ -158,6 +182,9 @@ export default function OnlineGame({ room: initialRoom, hostConfig, onExit, onBa
       // Nouvelle manche : on réinitialise et on charge les choix + l'audio
       // (sans le lancer : le joueur devra appuyer sur « Lancer l'extrait »).
       clearTimers()
+      deadlineRef.current = 0
+      answeredRef.current = false
+      lastTickRef.current = QUESTION_S
       setResult(null)
       setMyAnswer(null)
       setHasPlayed(false)
@@ -176,19 +203,32 @@ export default function OnlineGame({ room: initialRoom, hostConfig, onExit, onBa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room.status, room.current_round, room.round_revealed])
 
-  // Chrono local (pression + déclenche la fin de manche côté hôte).
+  // Chrono local (pression + clôture de la manche quand le temps est écoulé).
+  //
+  // Le temps restant est recalculé depuis une ÉCHÉANCE absolue plutôt que
+  // décrémenté d'une unité par tick : quand le navigateur ralentit les timers
+  // (onglet en arrière-plan, écran en veille sur mobile), un compteur décrémenté
+  // prendrait du retard et n'atteindrait jamais zéro, alors qu'ici le premier
+  // tick au réveil voit tout de suite que le temps est passé.
   function beginCountdown() {
     clearInterval(countdownRef.current)
+    deadlineRef.current = Date.now() + QUESTION_S * 1000
+    lastTickRef.current = QUESTION_S
     countdownRef.current = setInterval(() => {
-      setTimeLeft((t) => {
-        const next = Math.max(0, t - 1)
-        if (next > 0) playTick(next <= 5)
-        if (next === 0) {
-          clearInterval(countdownRef.current)
-          if (isHost) endRoundTimeout(room.id).catch(() => {})
-        }
-        return next
-      })
+      const left = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000))
+      // Le tic-tac s'arrête dès qu'on a répondu : on ne peut plus rien faire.
+      if (left > 0 && left !== lastTickRef.current && !answeredRef.current) {
+        playTick(left <= 5)
+      }
+      lastTickRef.current = left
+      setTimeLeft(left)
+      if (left === 0) {
+        clearInterval(countdownRef.current)
+        // N'importe quel joueur peut clore la manche (le serveur vérifie que le
+        // temps est bien écoulé). Avant, seul l'hôte le pouvait : s'il ne lançait
+        // pas l'extrait ou mettait son écran en veille, la partie restait figée.
+        endRoundTimeout(room.id).catch(() => {})
+      }
     }, 1000)
   }
 
@@ -253,12 +293,14 @@ export default function OnlineGame({ room: initialRoom, hostConfig, onExit, onBa
   async function handleBuzz(choice) {
     if (myAnswer || room.round_revealed) return
     setMyAnswer('pending')
+    answeredRef.current = true
     try {
       const res = await submitAnswer(room.id, choice.id)
       setMyAnswer(res.is_correct ? 'correct' : 'wrong')
       if (!res.is_correct) playWrong()
     } catch {
       setMyAnswer(null) // ex : "déjà répondu" / "trop tard" — on relâche
+      answeredRef.current = false
     }
   }
 

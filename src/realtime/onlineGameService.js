@@ -105,7 +105,8 @@ export async function submitAnswer(roomId, answerTrackId) {
   return data
 }
 
-/** L'hôte signale la fin du temps (aucun bon buzz) → reveal. */
+/** Signale la fin du temps (aucun bon buzz) → reveal. Ouvert à tous les joueurs :
+ *  le serveur vérifie que le temps est bien écoulé avant de clore la manche. */
 export async function endRoundTimeout(roomId) {
   const { error } = await supabase.rpc('end_round_timeout', { p_room_id: roomId })
   if (error) throw error
